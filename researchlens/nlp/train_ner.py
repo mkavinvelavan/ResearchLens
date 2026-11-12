@@ -16,6 +16,7 @@ import numpy as np
 
 from researchlens.common.results_io import HistoryCallback, save_config, save_metrics, save_predictions
 from researchlens.common.utils import (
+    make_training_args,
     LOCAL_DATA,
     Timer,
     count_parameters,
@@ -119,13 +120,13 @@ def main():
             "f1": f1_score(gold, pred, mode="strict", scheme=IOB2),
         }
 
-    targs = TrainingArguments(
+    targs = make_training_args(
+        len(ds["train"]), args.warmup_ratio,
         output_dir=str(dirs["checkpoints"]),
         num_train_epochs=args.epochs,
         learning_rate=args.lr,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size * 2,
-        warmup_ratio=args.warmup_ratio,
         weight_decay=args.weight_decay,
         lr_scheduler_type="linear",
         eval_strategy="epoch",

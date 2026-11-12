@@ -133,3 +133,30 @@ def _json_default(o):
     if isinstance(o, Path):
         return str(o)
     raise TypeError(f"Not JSON serialisable: {type(o)}")
+
+
+def make_training_args(n_train: int, warmup_ratio: float = 0.0, **kwargs):
+    """Build transformers.TrainingArguments that works on both transformers v4 and v5.
+
+    - warmup is passed as an explicit number of steps (v5 removed `warmup_ratio`);
+    - any argument the installed version no longer accepts is dropped with a printed note.
+    """
+    import inspect
+    import math
+
+    from transformers import TrainingArguments
+
+    accepted = set(inspect.signature(TrainingArguments.__init__).parameters)
+    bs = kwargs.get("per_device_train_batch_size", 8) * kwargs.get("gradient_accumulation_steps", 1)
+    total = math.ceil(n_train / max(bs, 1)) * float(kwargs.get("num_train_epochs", 1))
+    kwargs["warmup_steps"] = int(round(total * warmup_ratio))
+    # older v4 releases call it evaluation_strategy
+    if "eval_strategy" in kwargs and "eval_strategy" not in accepted and "evaluation_strategy" in accepted:
+        kwargs["evaluation_strategy"] = kwargs.pop("eval_strategy")
+    dropped = [k for k in kwargs if k not in accepted]
+    for k in dropped:
+        kwargs.pop(k)
+    if dropped:
+        print(f"Note: this transformers version does not accept {dropped}; ignored.")
+    print(f"Warm-up: {kwargs['warmup_steps']} of ~{int(total)} training steps ({warmup_ratio:.0%})")
+    return TrainingArguments(**kwargs)

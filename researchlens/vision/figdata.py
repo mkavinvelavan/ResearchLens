@@ -31,7 +31,14 @@ def build_transforms(processor, train: bool):
     from PIL import Image, ImageOps
     from torchvision import transforms as T
 
-    size = processor.size.get("height") or processor.size.get("shortest_edge") or 224
+    def _size(key):
+        sz = processor.size  # dict in transformers v4, SizeDict object in v5
+        try:
+            return sz.get(key) if isinstance(sz, dict) else getattr(sz, key, None)
+        except Exception:
+            return None
+
+    size = _size("height") or _size("shortest_edge") or 224
     mean, std = processor.image_mean, processor.image_std
 
     def pad_to_square(img: Image.Image) -> Image.Image:

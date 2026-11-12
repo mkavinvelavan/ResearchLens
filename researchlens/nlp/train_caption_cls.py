@@ -17,6 +17,7 @@ import numpy as np
 
 from researchlens.common.results_io import HistoryCallback, save_config, save_metrics, save_predictions
 from researchlens.common.utils import (
+    make_training_args,
     LOCAL_DATA, Timer, count_parameters, hardware_info, latest_checkpoint, parse_args_with_config, run_dirs, set_seed,
 )
 from researchlens.vision.figdata import CLASSES, classification_metrics, read_manifest
@@ -77,10 +78,10 @@ def main():
         pred = logits.argmax(-1)
         return {"accuracy": accuracy_score(labels, pred), "macro_f1": f1_score(labels, pred, average="macro")}
 
-    targs = TrainingArguments(
+    targs = make_training_args(
+        len(ds["train"]), args.warmup_ratio,
         output_dir=str(dirs["checkpoints"]), num_train_epochs=args.epochs, learning_rate=args.lr,
-        per_device_train_batch_size=args.batch_size, per_device_eval_batch_size=args.batch_size * 2,
-        warmup_ratio=args.warmup_ratio, weight_decay=args.weight_decay, lr_scheduler_type="linear",
+        per_device_train_batch_size=args.batch_size, per_device_eval_batch_size=args.batch_size * 2, weight_decay=args.weight_decay, lr_scheduler_type="linear",
         eval_strategy="epoch", save_strategy="epoch", save_total_limit=2, load_best_model_at_end=True,
         metric_for_best_model="macro_f1", greater_is_better=True, logging_steps=20,
         fp16=args.fp16 and torch.cuda.is_available(), report_to=["wandb"] if args.wandb else "none",
