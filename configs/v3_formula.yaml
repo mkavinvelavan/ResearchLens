@@ -1,0 +1,20 @@
+# V3 - TrOCR-small: formula image -> LaTeX (im2latex-100k, 20k-formula subset)
+model_name: microsoft/trocr-small-printed
+dataset: yuntian-deng/im2latex-100k
+model_tag: v3_formula
+run_name: trocr_small
+n_train: 20000
+n_val: 1000
+n_test: 2000
+max_target_len: 160
+epochs: 8
+lr: 5.0e-5
+batch_size: 16
+warmup_ratio: 0.05
+weight_decay: 0.05
+label_smoothing: 0.1
+hidden_dropout: 0.1
+early_stopping_patience: 2
+num_workers: 2
+num_beams: 1
+hub_repo: researchlens-trocr-formula

@@ -142,17 +142,19 @@ def _json_default(o):
     raise TypeError(f"Not JSON serialisable: {type(o)}")
 
 
-def make_training_args(n_train: int, warmup_ratio: float = 0.0, **kwargs):
+def make_training_args(n_train: int, warmup_ratio: float = 0.0, args_cls=None, **kwargs):
     """Build transformers.TrainingArguments that works on both transformers v4 and v5.
 
     - warmup is passed as an explicit number of steps (v5 removed `warmup_ratio`);
-    - any argument the installed version no longer accepts is dropped with a printed note.
+    - any argument the installed version no longer accepts is dropped with a printed note;
+    - args_cls: e.g. Seq2SeqTrainingArguments (default TrainingArguments).
     """
     import inspect
     import math
 
     from transformers import TrainingArguments
 
+    TrainingArguments = args_cls or TrainingArguments
     accepted = set(inspect.signature(TrainingArguments.__init__).parameters)
     bs = kwargs.get("per_device_train_batch_size", 8) * kwargs.get("gradient_accumulation_steps", 1)
     total = math.ceil(n_train / max(bs, 1)) * float(kwargs.get("num_train_epochs", 1))

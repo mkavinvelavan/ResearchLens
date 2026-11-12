@@ -63,7 +63,7 @@ class HistoryCallback(TrainerCallback):
             parts.append(f"running loss {self.last_train_loss:.4f}")
         if "eval_loss" in metrics:
             parts.append(f"val loss {metrics['eval_loss']:.4f}")
-        show = ("loss", "f1", "macro_f1", "accuracy")
+        show = ("loss", "f1", "macro_f1", "accuracy", "exact_match", "cer", "bleu4")
         for split in ("train", "val"):
             for m in show:
                 v = metrics.get(f"eval_{split}_{m}")
