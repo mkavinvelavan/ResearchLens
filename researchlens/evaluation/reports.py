@@ -55,6 +55,24 @@ def bio_entities(tags: list[str]) -> set[tuple[int, int, str]]:
     return ents
 
 
+def ner_cis(seed_run: dict) -> dict:
+    """Bootstrap over test sentences: entity micro-F1 and token accuracy."""
+    preds = seed_run["predictions"]
+    tp, fp, fn, ok, tot = [], [], [], [], []
+    for p in preds:
+        g, pr = bio_entities(p["gold"]), bio_entities(p["pred"])
+        tp.append(len(g & pr)); fp.append(len(pr - g)); fn.append(len(g - pr))
+        ok.append(sum(a == b for a, b in zip(p["gold"], p["pred"]))); tot.append(len(p["gold"]))
+    tp, fp, fn, ok, tot = map(np.array, (tp, fp, fn, ok, tot))
+
+    def f1(i):
+        t, f_p, f_n = tp[i].sum(), fp[i].sum(), fn[i].sum()
+        return 2 * t / max(2 * t + f_p + f_n, 1)
+
+    return {"test_f1_micro": P.bootstrap(f1, len(preds)),
+            "test_accuracy": P.bootstrap(lambda i: ok[i].sum() / max(tot[i].sum(), 1), len(preds))}
+
+
 def ner_report(results_root, model_tag="n1_ner", main_run="scibert", names=None) -> pd.DataFrame:
     root = Path(results_root)
     runs = P.find_runs(root, model_tag)
@@ -90,7 +108,7 @@ def ner_report(results_root, model_tag="n1_ner", main_run="scibert", names=None)
     keys = ["test_f1_micro", "test_f1_macro", "test_f1_weighted", "test_precision_micro", "test_recall_micro",
             "test_accuracy", "test_entity_token_accuracy", "test_sentence_exact_match",
             "train_f1_micro", "val_f1_micro"]
-    table = P.summary_table(runs, keys)
+    table = P.add_cis(P.summary_table(runs, keys), runs, ner_cis)
     pretty = _write_tables(table, keys, out)
     P.plot_run_comparison(table, ["test_f1_micro", "test_f1_macro"],
                           {"test_f1_micro": "Micro-F1", "test_f1_macro": "Macro-F1"},
@@ -228,7 +246,8 @@ def figcls_report(results_root, model_tag="v2_figcls", main_run="vit_base") -> p
                          "Gated fusion: train vs validation vs test", out / "runs" / "fusion_vit_scibert" / "generalisation_gap")
     keys = ["test_accuracy", "test_f1_macro", "test_balanced_accuracy", "test_precision_macro", "test_recall_macro",
             "test_top2_accuracy", "test_cohen_kappa", "test_roc_auc_macro_ovr", "train_f1_macro", "val_f1_macro"]
-    table = P.summary_table(runs, keys)
+    table = P.add_cis(P.summary_table(runs, keys), runs,
+                      lambda sd: P.classification_cis(sd["predictions"], classes))
     table["run"] = [RUN_LABELS.get(r, r).replace("\n", " ") for r in table["run"]]
     pretty = _write_tables(table, keys, out)
     table_plot = table.copy()

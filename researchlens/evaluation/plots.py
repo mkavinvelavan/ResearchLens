@@ -58,12 +58,55 @@ def summary_table(runs: dict[str, list[dict]], keys: list[str]) -> pd.DataFrame:
 
 
 def formatted_table(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
-    """Report-ready table with 'mean ± std' strings (as %)."""
+    """Report-ready table (as %): 'mean ± std' for several seeds, 'value [95% CI]' for one seed."""
     out = pd.DataFrame({"Run": df["run"], "Seeds": df["n_seeds"]})
     for k in keys:
-        if f"{k}_mean" in df:
-            out[k] = [f"{m*100:.2f} ± {s*100:.2f}" for m, s in zip(df[f"{k}_mean"], df[f"{k}_std"])]
+        if f"{k}_mean" not in df:
+            continue
+        cells = []
+        for i, (m, s_, n) in enumerate(zip(df[f"{k}_mean"], df[f"{k}_std"], df["n_seeds"])):
+            lo, hi = (df[f"{k}_lo"].iloc[i], df[f"{k}_hi"].iloc[i]) if f"{k}_lo" in df else (np.nan, np.nan)
+            if n > 1:
+                cells.append(f"{m*100:.2f} ± {s_*100:.2f}")
+            elif not np.isnan(lo):
+                cells.append(f"{m*100:.2f} [{lo*100:.2f}, {hi*100:.2f}]")
+            else:
+                cells.append(f"{m*100:.2f}")
+        out[k] = cells
     return out
+
+
+# ----------------------------------------------------------------------------- bootstrap confidence intervals
+def bootstrap(stat_fn, n_items: int, n_boot: int = 1000, seed: int = 0) -> tuple[float, float]:
+    """95% percentile bootstrap CI of stat_fn(indices) over test items (no retraining needed)."""
+    rng = np.random.default_rng(seed)
+    vals = [stat_fn(rng.integers(0, n_items, n_items)) for _ in range(n_boot)]
+    lo, hi = np.percentile(vals, [2.5, 97.5])
+    return float(lo), float(hi)
+
+
+def classification_cis(preds: list[dict], classes: list[str]) -> dict[str, tuple[float, float]]:
+    from sklearn.metrics import f1_score
+
+    y = np.array([classes.index(p["gold"]) for p in preds])
+    yh = np.array([classes.index(p["pred"]) for p in preds])
+    return {
+        "test_accuracy": bootstrap(lambda i: float((y[i] == yh[i]).mean()), len(y)),
+        "test_f1_macro": bootstrap(lambda i: f1_score(y[i], yh[i], average="macro", labels=range(len(classes)),
+                                                      zero_division=0), len(y), n_boot=500),
+    }
+
+
+def add_cis(table: pd.DataFrame, runs: dict[str, list[dict]], ci_fn) -> pd.DataFrame:
+    """Attach <metric>_lo / _hi columns for single-seed runs."""
+    table = table.copy()
+    for i, name in enumerate(table["run"]):
+        seeds = runs.get(name)
+        if not seeds or len(seeds) != 1 or not seeds[0]["predictions"]:
+            continue
+        for k, (lo, hi) in ci_fn(seeds[0]).items():
+            table.loc[i, f"{k}_lo"], table.loc[i, f"{k}_hi"] = lo, hi
+    return table
 
 
 # ----------------------------------------------------------------------------- training curves
@@ -296,6 +339,10 @@ def plot_run_comparison(table: pd.DataFrame, keys: list[str], names: dict[str, s
         if f"{key}_mean" not in table:
             continue
         m, s = table[f"{key}_mean"] * 100, table[f"{key}_std"] * 100
+        if f"{key}_lo" in table:  # single-seed runs: asymmetric 95% bootstrap CI instead of seed std
+            lo = (table[f"{key}_mean"] - table[f"{key}_lo"]).fillna(table[f"{key}_std"]) * 100
+            hi = (table[f"{key}_hi"] - table[f"{key}_mean"]).fillna(table[f"{key}_std"]) * 100
+            s = np.vstack([lo.clip(lower=0), hi.clip(lower=0)])
         bars = ax.bar(x + (k - (len(keys) - 1) / 2) * w, m, w * 0.92, yerr=s, color=PALETTE[k], label=names.get(key, key),
                       capsize=2, error_kw={"elinewidth": 0.8, "ecolor": INK_2})
         ax.bar_label(bars, fmt="%.1f", fontsize=8, color=INK_2, padding=2)
