@@ -22,6 +22,7 @@ import numpy as np
 
 from researchlens.common.results_io import HistoryCallback, print_split_table, save_config, save_metrics, save_predictions
 from researchlens.common.utils import (
+    backup_to_drive, verify_model_saved,
     add_storage_args, cleanup_checkpoints, should_keep_model,
     make_training_args,
     LOCAL_DATA, Timer, count_parameters, hardware_info, latest_checkpoint, parse_args_with_config, run_dirs, set_seed,
@@ -227,6 +228,8 @@ def main():
     if keep:
         tok.save_pretrained(str(final))
         processor.save_pretrained(str(final))
+    if should_keep_model(args):
+        verify_model_saved(dirs["final_model"])
     cleanup_checkpoints(dirs["checkpoints"])
     print(f"Fusion: accuracy = {metrics['test_accuracy']:.4f} | macro-F1 = {metrics['test_f1_macro']:.4f} | "
           f"mean gate image/text = {metrics['mean_gate_image']:.2f}/{metrics['mean_gate_text']:.2f}")
@@ -239,6 +242,8 @@ def main():
                    title="ViT + SciBERT gated-fusion figure-type classifier (SPIQA)",
                    base_model=args.vision_model, dataset="SPIQA figures + captions", task="image-classification")
 
+    if should_keep_model(args):
+        backup_to_drive(dirs["final_model"], dirs["drive_model"])
 
 if __name__ == "__main__":
     main()

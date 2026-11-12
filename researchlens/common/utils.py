@@ -70,10 +70,13 @@ def run_dirs(model_name: str, run_name: str, seed: int, drive_root: Path | str =
         # Set RL_CKPT_ON_DRIVE=1 to keep them on Drive (survives disconnects, needs space).
         "checkpoints": (root if os.environ.get("RL_CKPT_ON_DRIVE") == "1" else Path(os.environ.get("RL_CKPT_DIR", "/content/checkpoints")))
         / ("checkpoints" if os.environ.get("RL_CKPT_ON_DRIVE") == "1" else "") / model_name / run_name / f"seed_{seed}",
-        "final_model": root / "models" / model_name / run_name / f"seed_{seed}",
+        # final model: written to the local Colab disk, uploaded to the Hugging Face Hub, then copied to Drive if
+        # there is room (Drive is a backup, the Hub is the permanent store)
+        "final_model": Path(os.environ.get("RL_MODEL_DIR", "/content/final_models")) / model_name / run_name / f"seed_{seed}",
+        "drive_model": root / "models" / model_name / run_name / f"seed_{seed}",
     }
     for k, p in d.items():
-        if k != "final_model":          # created only when the model is actually kept
+        if k not in ("final_model", "drive_model"):   # created only when the model is actually kept
             p.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -225,3 +228,32 @@ def cleanup_checkpoints(ckpt_dir) -> None:
 
     shutil.rmtree(ckpt_dir, ignore_errors=True)
     print(f"Removed intermediate checkpoints: {ckpt_dir}")
+
+
+def verify_model_saved(model_dir) -> None:
+    """Fail loudly if the weights file is missing (e.g. disk full) instead of silently losing the model."""
+    model_dir = Path(model_dir)
+    weights = [p for p in model_dir.glob("*") if p.suffix in (".safetensors", ".bin", ".pt") and p.name != "training_args.bin"]
+    if not weights or max(p.stat().st_size for p in weights) < 1_000_000:
+        raise RuntimeError(f"Model weights were NOT saved in {model_dir} (disk full?). Checkpoints kept for recovery.")
+    print(f"Model weights saved: {', '.join(f'{p.name} ({p.stat().st_size/1e6:.0f} MB)' for p in weights)}")
+
+
+def backup_to_drive(local_dir, drive_dir) -> None:
+    """Copy the final model to Drive only if there is enough free space; never fail the run because of Drive."""
+    import shutil
+
+    local_dir, drive_dir = Path(local_dir), Path(drive_dir)
+    size = sum(p.stat().st_size for p in local_dir.rglob("*") if p.is_file())
+    try:
+        free = shutil.disk_usage(drive_dir.parents[3] if len(drive_dir.parents) > 3 else drive_dir.parent).free
+    except Exception:
+        free = 0
+    if free < size * 1.2:
+        print(f"Drive backup skipped: needs {size/1e6:.0f} MB, {free/1e6:.0f} MB free. (The model is on the Hub.)")
+        return
+    try:
+        shutil.copytree(local_dir, drive_dir, dirs_exist_ok=True)
+        print(f"Drive backup: {drive_dir}")
+    except Exception as e:
+        print(f"Drive backup failed ({e}); the model is on the Hub.")

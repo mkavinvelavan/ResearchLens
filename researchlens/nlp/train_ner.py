@@ -16,6 +16,7 @@ import numpy as np
 
 from researchlens.common.results_io import HistoryCallback, print_split_table, save_config, save_metrics, save_predictions
 from researchlens.common.utils import (
+    backup_to_drive, verify_model_saved,
     add_storage_args, cleanup_checkpoints, should_keep_model,
     add_regularisation_args, apply_freezing, dropout_overrides,
     make_training_args,
@@ -226,6 +227,8 @@ def main():
         dirs["final_model"].mkdir(parents=True, exist_ok=True)
         trainer.save_model(str(dirs["final_model"]))
         tok.save_pretrained(str(dirs["final_model"]))
+    if should_keep_model(args):
+        verify_model_saved(dirs["final_model"])
     cleanup_checkpoints(dirs["checkpoints"])
     print_split_table(split_scores, ["f1_micro", "f1_macro", "precision_micro", "recall_micro", "accuracy",
                                      "entity_token_accuracy"])
@@ -241,6 +244,8 @@ def main():
             dataset="SciERC (Luan et al., 2018)", task="token-classification",
         )
 
+    if should_keep_model(args):
+        backup_to_drive(dirs["final_model"], dirs["drive_model"])
 
 if __name__ == "__main__":
     main()
