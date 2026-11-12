@@ -21,6 +21,7 @@ def read_manifest(data_dir: Path) -> dict[str, list[dict]]:
             splits[r["split"]].append({
                 "path": str(data_dir / r["path"]), "rel_path": r["path"], "label": CLASSES.index(r["label"]),
                 "caption": (r.get("caption") or "").strip(), "paper_id": r.get("paper_id", ""),
+                "domain": r.get("domain") or "spiqa",
             })
     print({k: len(v) for k, v in splits.items()})
     return splits
