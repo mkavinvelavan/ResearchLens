@@ -7,21 +7,25 @@ Shared by every model: optimizer **AdamW**, mixed precision **fp16** on GPU, eva
 the **best validation checkpoint** is kept and used for the single test evaluation, **early stopping** when the
 validation metric stops improving, **3 seeds** (42, 43, 44).
 
-## N1 · SciBERT NER (SciERC) — `configs/n1_ner.yaml`
+## N1 · SciBERT NER (SciERC) — `configs/n1_ner.yaml` (regularised)
 
-| Setting | Value | Why |
-|---|---|---|
-| Pre-trained model | `allenai/scibert_scivocab_uncased` | BERT pre-trained on 1.14M scientific papers |
-| Epochs (max) | 10 | small dataset; early stopping usually ends at 5–8 |
-| Learning rate | 3e-5 | standard range for BERT fine-tuning (2e-5 – 5e-5) |
-| Batch size | 16 | fits a T4 with sequences of 256 tokens |
-| Max sequence length | 256 tokens | covers almost every SciERC sentence |
-| LR schedule | linear decay, 10% warm-up | stabilises the first steps |
-| Weight decay | 0.01 | light regularisation |
-| Early stopping | 3 epochs without val-F1 gain | avoids overfitting |
-| Best-model metric | validation entity F1 (strict, seqeval) | official NER metric |
-| Labelling | BIO tags, first sub-word of each word | standard for token classification |
-| Baseline | `bert-base-uncased`, same settings | shows the value of scientific pre-training |
+The first run (lr 3e-5, 10 epochs) showed validation loss rising from epoch 3 while training loss went to ~0.02,
+so the defaults were changed to reduce over-fitting. The original settings are kept as the `scibert_noreg` run.
+
+| Setting | Before (`scibert_noreg`) | Now (`scibert`) | Why |
+|---|---|---|---|
+| Pre-trained model | SciBERT | SciBERT | BERT pre-trained on 1.14M scientific papers |
+| Epochs (max) | 10 | **8** | best epochs were 8–10; fewer passes over 1,861 sentences |
+| Learning rate | 3e-5 | **2e-5** | smaller updates, less memorisation |
+| Weight decay | 0.01 | **0.05** | stronger penalty on large weights |
+| Encoder dropout | 0.1 | **0.2** | randomly drops more activations while training |
+| Attention dropout | 0.1 | 0.1 | |
+| Word embeddings | trainable | **frozen** | ~24M fewer trainable weights; rare words stay as pre-trained |
+| Early stopping | 3 epochs | **2 epochs** without val-F1 gain | stop sooner |
+| Batch size / max length | 16 / 256 | 16 / 256 | |
+| LR schedule | linear, 10% warm-up | linear, 10% warm-up | |
+| Best-model metric | validation entity F1 | validation entity F1 | |
+| Baseline | — | `bert-base-uncased`, same regularised settings | value of scientific pre-training |
 
 ## V2 · ViT figure classifier (SPIQA images) — `configs/v2_figcls.yaml`
 
@@ -35,6 +39,7 @@ validation metric stops improving, **3 seeds** (42, 43, 44).
 | Augmentation | small random crop (85–100%), colour jitter; **no flips** | flipping would mirror text and axes |
 | LR schedule | cosine, 10% warm-up | |
 | Weight decay | 0.05 | ViTs benefit from stronger decay |
+| Encoder dropout | 0.1 (ViT default 0.0) | regularisation |
 | Label smoothing | 0.1 | reduces over-confidence |
 | Class weights | inverse frequency | classes are imbalanced (many plots, few photos) |
 | Early stopping | 3 epochs without val macro-F1 gain | |
@@ -48,6 +53,7 @@ validation metric stops improving, **3 seeds** (42, 43, 44).
 | Pre-trained model | `allenai/scibert_scivocab_uncased` |
 | Epochs (max) / LR / batch | 5 / 3e-5 / 32 |
 | Max caption length | 128 tokens |
+| Regularisation | weight decay 0.05, dropout 0.2, frozen embeddings, label smoothing 0.1 |
 | Schedule | linear, 10% warm-up; early stopping 2 |
 | Best-model metric | validation macro-F1 |
 

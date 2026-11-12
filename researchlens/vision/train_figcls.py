@@ -20,6 +20,7 @@ import numpy as np
 
 from researchlens.common.results_io import HistoryCallback, print_split_table, save_config, save_metrics, save_predictions
 from researchlens.common.utils import (
+    add_regularisation_args, apply_freezing, dropout_overrides,
     make_training_args,
     LOCAL_DATA,
     Timer,
@@ -47,6 +48,7 @@ def get_args():
     p.add_argument("--warmup_ratio", type=float, default=0.1)
     p.add_argument("--weight_decay", type=float, default=0.05)
     p.add_argument("--label_smoothing", type=float, default=0.1)
+    add_regularisation_args(p)
     p.add_argument("--class_weights", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--freeze_backbone", action="store_true", help="linear-probe baseline")
     p.add_argument("--early_stopping_patience", type=int, default=3)
@@ -104,7 +106,9 @@ def main():
     model = AutoModelForImageClassification.from_pretrained(
         args.model_name, num_labels=len(CLASSES), id2label=id2label,
         label2id={v: k for k, v in id2label.items()}, ignore_mismatched_sizes=True,
+        **dropout_overrides(args.model_name, args.hidden_dropout, args.attention_dropout),
     )
+    apply_freezing(model, args.freeze_embeddings, args.freeze_layers)
     if args.freeze_backbone:
         for n, p_ in model.named_parameters():
             p_.requires_grad = n.startswith("classifier")

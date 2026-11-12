@@ -1,13 +1,17 @@
-# N1 - SciBERT NER on SciERC
+# N1 - SciBERT NER on SciERC  (regularised against over-fitting)
 model_name: allenai/scibert_scivocab_uncased
 model_tag: n1_ner
 run_name: scibert
 data_dir: /content/data/scierc
-epochs: 10
-lr: 3.0e-5
+epochs: 8                 # was 10: best epochs were 8-10 and val loss rose from epoch 3
+lr: 2.0e-5                # was 3e-5: smaller updates, less memorisation
 batch_size: 16
 max_length: 256
 warmup_ratio: 0.1
-weight_decay: 0.01
-early_stopping_patience: 3
+weight_decay: 0.05        # was 0.01: stronger L2 penalty on weights
+hidden_dropout: 0.2       # was 0.1 (BERT default): more dropout inside the encoder
+attention_dropout: 0.1
+freeze_embeddings: true   # keep pre-trained word embeddings fixed (fewer weights to over-fit)
+label_smoothing: 0.0
+early_stopping_patience: 2  # was 3: stop sooner once validation F1 stops improving
 hub_repo: researchlens-scibert-ner

@@ -17,6 +17,7 @@ import numpy as np
 
 from researchlens.common.results_io import HistoryCallback, print_split_table, save_config, save_metrics, save_predictions
 from researchlens.common.utils import (
+    add_regularisation_args, apply_freezing, dropout_overrides,
     make_training_args,
     LOCAL_DATA, Timer, count_parameters, hardware_info, latest_checkpoint, parse_args_with_config, run_dirs, set_seed,
 )
@@ -37,6 +38,8 @@ def get_args():
     p.add_argument("--max_length", type=int, default=128)
     p.add_argument("--warmup_ratio", type=float, default=0.1)
     p.add_argument("--weight_decay", type=float, default=0.01)
+    p.add_argument("--label_smoothing", type=float, default=0.0)
+    add_regularisation_args(p)
     p.add_argument("--early_stopping_patience", type=int, default=2)
     p.add_argument("--fp16", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--wandb", action="store_true")
@@ -71,7 +74,9 @@ def main():
     ds = {k: to_ds(v) for k, v in splits.items()}
     id2label = dict(enumerate(CLASSES))
     model = AutoModelForSequenceClassification.from_pretrained(
-        args.model_name, num_labels=len(CLASSES), id2label=id2label, label2id={v: k for k, v in id2label.items()})
+        args.model_name, num_labels=len(CLASSES), id2label=id2label, label2id={v: k for k, v in id2label.items()},
+        **dropout_overrides(args.model_name, args.hidden_dropout, args.attention_dropout))
+    apply_freezing(model, args.freeze_embeddings, args.freeze_layers)
 
     # fixed 2,000-example slice of the training set, scored every epoch (no augmentation) -> over-fitting curves
     train_eval_items = train_eval_subset(splits["train"], 2000, args.seed)
@@ -85,7 +90,7 @@ def main():
     targs = make_training_args(
         len(ds["train"]), args.warmup_ratio,
         output_dir=str(dirs["checkpoints"]), num_train_epochs=args.epochs, learning_rate=args.lr,
-        per_device_train_batch_size=args.batch_size, per_device_eval_batch_size=args.batch_size * 2, weight_decay=args.weight_decay, lr_scheduler_type="linear",
+        per_device_train_batch_size=args.batch_size, per_device_eval_batch_size=args.batch_size * 2, weight_decay=args.weight_decay, lr_scheduler_type="linear", label_smoothing_factor=args.label_smoothing,
         eval_strategy="epoch", save_strategy="epoch", save_total_limit=2, load_best_model_at_end=True,
         metric_for_best_model="val_macro_f1", greater_is_better=True, logging_steps=20,
         fp16=args.fp16 and torch.cuda.is_available(), report_to=["wandb"] if args.wandb else "none",

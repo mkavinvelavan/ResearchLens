@@ -7,5 +7,10 @@ epochs: 5
 lr: 3.0e-5
 batch_size: 32
 max_length: 128
+weight_decay: 0.05
+hidden_dropout: 0.2
+attention_dropout: 0.1
+freeze_embeddings: true
+label_smoothing: 0.1
 early_stopping_patience: 2
 hub_repo: researchlens-scibert-caption-figure-type

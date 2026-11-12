@@ -160,3 +160,43 @@ def make_training_args(n_train: int, warmup_ratio: float = 0.0, **kwargs):
         print(f"Note: this transformers version does not accept {dropped}; ignored.")
     print(f"Warm-up: {kwargs['warmup_steps']} of ~{int(total)} training steps ({warmup_ratio:.0%})")
     return TrainingArguments(**kwargs)
+
+
+# ------------------------------------------------------------------ anti-over-fitting helpers
+def add_regularisation_args(p) -> None:
+    """Same regularisation switches for every transformer we fine-tune (BERT/SciBERT/ViT)."""
+    import argparse
+
+    p.add_argument("--hidden_dropout", type=float, default=None, help="dropout inside the encoder (None = model default)")
+    p.add_argument("--attention_dropout", type=float, default=None, help="dropout on attention weights")
+    p.add_argument("--freeze_embeddings", action=argparse.BooleanOptionalAction, default=False,
+                   help="keep the pre-trained embedding layer fixed")
+    p.add_argument("--freeze_layers", type=int, default=0, help="keep the lowest N encoder layers fixed")
+
+
+def dropout_overrides(model_name: str, hidden: float | None, attention: float | None) -> dict:
+    """Config overrides for dropout, only for attributes the model actually has."""
+    from transformers import AutoConfig
+
+    cfg = AutoConfig.from_pretrained(model_name)
+    out = {}
+    if hidden is not None and hasattr(cfg, "hidden_dropout_prob"):
+        out["hidden_dropout_prob"] = hidden
+    if attention is not None and hasattr(cfg, "attention_probs_dropout_prob"):
+        out["attention_probs_dropout_prob"] = attention
+    return out
+
+
+def apply_freezing(model, freeze_embeddings: bool, freeze_layers: int) -> None:
+    base = model.base_model
+    if freeze_embeddings and hasattr(base, "embeddings"):
+        for p in base.embeddings.parameters():
+            p.requires_grad = False
+    layers = getattr(getattr(base, "encoder", None), "layer", None)
+    if freeze_layers and layers is not None:
+        for layer in layers[:freeze_layers]:
+            for p in layer.parameters():
+                p.requires_grad = False
+    n_tr = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    n_all = sum(p.numel() for p in model.parameters())
+    print(f"Trainable parameters: {n_tr:,} of {n_all:,} ({n_tr / n_all:.0%})")

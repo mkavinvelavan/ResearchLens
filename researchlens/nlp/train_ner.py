@@ -16,6 +16,7 @@ import numpy as np
 
 from researchlens.common.results_io import HistoryCallback, print_split_table, save_config, save_metrics, save_predictions
 from researchlens.common.utils import (
+    add_regularisation_args, apply_freezing, dropout_overrides,
     make_training_args,
     LOCAL_DATA,
     Timer,
@@ -43,6 +44,8 @@ def get_args():
     p.add_argument("--max_length", type=int, default=256)
     p.add_argument("--warmup_ratio", type=float, default=0.1)
     p.add_argument("--weight_decay", type=float, default=0.01)
+    p.add_argument("--label_smoothing", type=float, default=0.0)
+    add_regularisation_args(p)
     p.add_argument("--early_stopping_patience", type=int, default=3)
     p.add_argument("--fp16", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--wandb", action="store_true", help="also log to Weights & Biases")
@@ -96,8 +99,10 @@ def main():
         ds[split] = raw.map(encode, batched=True, remove_columns=["id", "tokens", "ner_tags"])
 
     model = AutoModelForTokenClassification.from_pretrained(
-        args.model_name, num_labels=len(BIO_LABELS), id2label=id2label, label2id=label2id
+        args.model_name, num_labels=len(BIO_LABELS), id2label=id2label, label2id=label2id,
+        **dropout_overrides(args.model_name, args.hidden_dropout, args.attention_dropout),
     )
+    apply_freezing(model, args.freeze_embeddings, args.freeze_layers)
 
     def decode(pred_ids, label_ids):
         gold, pred = [], []
@@ -140,6 +145,7 @@ def main():
         per_device_eval_batch_size=args.batch_size * 2,
         weight_decay=args.weight_decay,
         lr_scheduler_type="linear",
+        label_smoothing_factor=args.label_smoothing,
         eval_strategy="epoch",
         save_strategy="epoch",
         save_total_limit=2,

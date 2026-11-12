@@ -74,6 +74,14 @@ def ner_report(results_root, model_tag="n1_ner", main_run="scibert", names=None)
     nice = "SciBERT NER (SciERC)"
 
     _common_curves(seeds, "f1", "F1", nice, out)
+    for name, rs in runs.items():           # same curves for every other run (baseline, no-regularisation ...)
+        if name != main_run and not rs[0]["history"].empty:
+            _common_curves(rs, "f1", "F1", f"NER, {name}", out / "runs" / name)
+    tbl = P.summary_table(runs, ["train_f1_micro", "val_f1_micro", "test_f1_micro"])
+    if "train_f1_micro_mean" in tbl:
+        P.plot_run_comparison(tbl, ["train_f1_micro", "val_f1_micro", "test_f1_micro"],
+                              {"train_f1_micro": "Train F1", "val_f1_micro": "Validation F1", "test_f1_micro": "Test F1"},
+                              "NER over-fitting check: train vs validation vs test F1 per run", out / "overfitting_comparison")
     P.plot_split_gap(seeds, {"f1_micro": "Entity F1 (micro)", "f1_macro": "Entity F1 (macro)",
                              "accuracy": "Token accuracy", "entity_token_accuracy": "Entity-token accuracy"},
                      "NER: train vs validation vs test (best checkpoint)", out / "generalisation_gap")
