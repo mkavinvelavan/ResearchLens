@@ -19,8 +19,12 @@ def hf_login_from_colab() -> None:
         except Exception:
             token = None
     if not token:
-        raise RuntimeError("HF_TOKEN not found. Add it in Colab -> Secrets (key icon) and enable notebook access.")
-    login(token=token, add_to_git_credential=False)
+        print("WARNING: HF_TOKEN not found (Colab -> Secrets, notebook access on). Skipping Hub upload.")
+        return
+    try:
+        login(token=token, add_to_git_credential=False)
+    except Exception as e:
+        print(f"WARNING: Hugging Face login failed: {e}")
 
 
 def _card(repo_id: str, title: str, base_model: str, dataset: str, task: str, metrics: dict, extra: str = "") -> str:
@@ -62,7 +66,17 @@ model = AutoModel.from_pretrained("{repo_id}")
 """
 
 
-def push_model(
+def push_model(*args, **kwargs):
+    """Upload, but never crash a finished training run: results are already saved on Drive."""
+    try:
+        return _push_model(*args, **kwargs)
+    except Exception as e:
+        print(f"WARNING: Hugging Face upload failed ({type(e).__name__}: {e}). "
+              "Results are saved on Drive; you can push later with researchlens.common.hub.push_model.")
+        return None
+
+
+def _push_model(
     model_dir: Path,
     results_dir: Path,
     repo_name: str,

@@ -28,17 +28,42 @@ def download_scierc(data_dir: Path) -> Path:
             return cand
     data_dir.mkdir(parents=True, exist_ok=True)
     tgz = data_dir / "sciERC_processed.tar.gz"
-    if not tgz.exists():
-        print(f"Downloading SciERC from {SCIERC_URL} ...")
-        urllib.request.urlretrieve(SCIERC_URL, tgz)
-    with tarfile.open(tgz) as tf:
-        tf.extractall(data_dir)
-    for cand in data_dir.rglob("train.json"):
-        return cand.parent
+    try:
+        if not tgz.exists():
+            print(f"Downloading SciERC from {SCIERC_URL} ...")
+            urllib.request.urlretrieve(SCIERC_URL, tgz)
+        with tarfile.open(tgz) as tf:
+            tf.extractall(data_dir)
+        for cand in data_dir.rglob("train.json"):
+            return cand.parent
+    except Exception as e:  # author server down -> try the Hugging Face mirror
+        print(f"Primary SciERC download failed ({e}); trying Hugging Face mirror {HF_MIRROR} ...")
+        tgz.unlink(missing_ok=True)
+    try:
+        return _download_hf_mirror(data_dir / "hf_mirror")
+    except Exception as e:
+        print(f"Mirror failed too: {e}")
     raise FileNotFoundError(
         "SciERC train.json not found after extraction. Download sciERC_processed.tar.gz manually "
         f"from {SCIERC_URL} and pass --data_dir to the folder containing train/dev/test.json."
     )
+
+
+HF_MIRROR = "nsusemiehl/SciERC"
+
+
+def _download_hf_mirror(out: Path) -> Path:
+    """Fallback copy on the Hub. Accepts it only if it has the DyGIE-style keys this loader expects."""
+    from huggingface_hub import hf_hub_download
+
+    out.mkdir(parents=True, exist_ok=True)
+    for split in ("train", "dev", "test"):
+        src = Path(hf_hub_download(HF_MIRROR, f"{split}.jsonl", repo_type="dataset", local_dir=str(out / "raw")))
+        first = json.loads(src.open(encoding="utf-8").readline())
+        if not {"sentences", "ner", "relations"} <= set(first):
+            raise ValueError(f"mirror has a different schema (keys: {sorted(first)})")
+        (out / f"{split}.json").write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+    return out
 
 
 def read_docs(path: Path) -> list[dict]:

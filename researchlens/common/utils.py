@@ -37,7 +37,11 @@ def parse_args_with_config(parser: argparse.ArgumentParser) -> argparse.Namespac
     if unknown:
         raise ValueError(f"Unknown keys in config {pre.config}: {sorted(unknown)}")
     parser.set_defaults(**cfg)
-    return parser.parse_args()
+    args = parser.parse_args()
+    print("Fine-tuning settings:")
+    for k, v in vars(args).items():
+        print(f"  {k:<24} {v}")
+    return args
 
 
 def set_seed(seed: int) -> None:
