@@ -66,11 +66,15 @@ def run_dirs(model_name: str, run_name: str, seed: int, drive_root: Path | str =
     root = Path(drive_root)
     d = {
         "results": root / "results" / model_name / run_name / f"seed_{seed}",
-        "checkpoints": root / "checkpoints" / model_name / run_name / f"seed_{seed}",
+        # checkpoints are big (~1.3 GB each for BERT-size models) -> local Colab disk by default, deleted after the run.
+        # Set RL_CKPT_ON_DRIVE=1 to keep them on Drive (survives disconnects, needs space).
+        "checkpoints": (root if os.environ.get("RL_CKPT_ON_DRIVE") == "1" else Path(os.environ.get("RL_CKPT_DIR", "/content/checkpoints")))
+        / ("checkpoints" if os.environ.get("RL_CKPT_ON_DRIVE") == "1" else "") / model_name / run_name / f"seed_{seed}",
         "final_model": root / "models" / model_name / run_name / f"seed_{seed}",
     }
-    for p in d.values():
-        p.mkdir(parents=True, exist_ok=True)
+    for k, p in d.items():
+        if k != "final_model":          # created only when the model is actually kept
+            p.mkdir(parents=True, exist_ok=True)
     return d
 
 
@@ -200,3 +204,24 @@ def apply_freezing(model, freeze_embeddings: bool, freeze_layers: int) -> None:
     n_tr = sum(p.numel() for p in model.parameters() if p.requires_grad)
     n_all = sum(p.numel() for p in model.parameters())
     print(f"Trainable parameters: {n_tr:,} of {n_all:,} ({n_tr / n_all:.0%})")
+
+
+def add_storage_args(p) -> None:
+    import argparse
+
+    p.add_argument("--keep_model", action=argparse.BooleanOptionalAction, default=None,
+                   help="save the final model to Drive (default: only for seed 42 or when pushing to the Hub)")
+
+
+def should_keep_model(args) -> bool:
+    if args.keep_model is not None:
+        return bool(args.keep_model)
+    return args.seed == 42 or bool(getattr(args, "push_to_hub", False))
+
+
+def cleanup_checkpoints(ckpt_dir) -> None:
+    """Training finished and results are saved -> intermediate checkpoints are no longer needed."""
+    import shutil
+
+    shutil.rmtree(ckpt_dir, ignore_errors=True)
+    print(f"Removed intermediate checkpoints: {ckpt_dir}")

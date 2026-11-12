@@ -16,6 +16,7 @@ import numpy as np
 
 from researchlens.common.results_io import HistoryCallback, print_split_table, save_config, save_metrics, save_predictions
 from researchlens.common.utils import (
+    add_storage_args, cleanup_checkpoints, should_keep_model,
     add_regularisation_args, apply_freezing, dropout_overrides,
     make_training_args,
     LOCAL_DATA,
@@ -50,6 +51,7 @@ def get_args():
     p.add_argument("--fp16", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--wandb", action="store_true", help="also log to Weights & Biases")
     p.add_argument("--push_to_hub", action="store_true")
+    add_storage_args(p)
     p.add_argument("--hub_repo", default="researchlens-scibert-ner")
     return parse_args_with_config(p)
 
@@ -148,7 +150,7 @@ def main():
         label_smoothing_factor=args.label_smoothing,
         eval_strategy="epoch",
         save_strategy="epoch",
-        save_total_limit=2,
+        save_total_limit=1,
         load_best_model_at_end=True,
         metric_for_best_model="val_f1",
         greater_is_better=True,
@@ -220,8 +222,11 @@ def main():
         dirs["results"] / "predictions.jsonl",
     )
 
-    trainer.save_model(str(dirs["final_model"]))
-    tok.save_pretrained(str(dirs["final_model"]))
+    if should_keep_model(args):
+        dirs["final_model"].mkdir(parents=True, exist_ok=True)
+        trainer.save_model(str(dirs["final_model"]))
+        tok.save_pretrained(str(dirs["final_model"]))
+    cleanup_checkpoints(dirs["checkpoints"])
     print_split_table(split_scores, ["f1_micro", "f1_macro", "precision_micro", "recall_micro", "accuracy",
                                      "entity_token_accuracy"])
     print(f"Results: {dirs['results']}")
