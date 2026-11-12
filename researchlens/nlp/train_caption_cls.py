@@ -99,7 +99,7 @@ def main():
         fp16=args.fp16 and torch.cuda.is_available(), report_to=["wandb"] if args.wandb else "none",
         run_name=f"{args.model_tag}-{args.run_name}-s{args.seed}", seed=args.seed,
     )
-    hist_cb = HistoryCallback(dirs["results"] / "history.csv")
+    hist_cb = HistoryCallback(dirs["results"] / "history.csv", resume=latest_checkpoint(dirs["checkpoints"]) is not None)
     trainer = Trainer(
         model=model, args=targs, train_dataset=ds["train"], eval_dataset={"train": train_eval_ds, "val": ds["validation"]},
         data_collator=DataCollatorWithPadding(tok), compute_metrics=compute_metrics,

@@ -24,9 +24,11 @@ class HistoryCallback(TrainerCallback):
     The CSV is re-written after every log event, so the curves survive a Colab disconnect.
     """
 
-    def __init__(self, out_path: Path):
+    def __init__(self, out_path: Path, resume: bool = False):
         self.out_path = Path(out_path)
         self.rows: list[dict[str, Any]] = []
+        if not resume and self.out_path.exists():  # fresh run: drop leftovers from an interrupted earlier attempt
+            self.out_path.unlink()
         self.max_epochs, self.best_epoch, self.best_value, self.last_train_loss = 0, None, None, None
         if self.out_path.exists():  # resumed run: keep earlier history
             with open(self.out_path, newline="", encoding="utf-8") as f:

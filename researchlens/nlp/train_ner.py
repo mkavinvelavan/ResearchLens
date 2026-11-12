@@ -161,7 +161,7 @@ def main():
         run_name=f"{args.model_tag}-{args.run_name}-s{args.seed}",
         seed=args.seed,
     )
-    hist_cb = HistoryCallback(dirs["results"] / "history.csv")
+    hist_cb = HistoryCallback(dirs["results"] / "history.csv", resume=latest_checkpoint(dirs["checkpoints"]) is not None)
     trainer = Trainer(
         model=model,
         args=targs,
