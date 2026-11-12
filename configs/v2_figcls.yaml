@@ -1,0 +1,14 @@
+# V2 - ViT figure-type classifier on SPIQA figures
+model_name: google/vit-base-patch16-224-in21k
+model_tag: v2_figcls
+run_name: vit_base
+data_dir: /content/data/spiqa_figs
+epochs: 8
+lr: 5.0e-5
+batch_size: 32
+warmup_ratio: 0.1
+weight_decay: 0.05
+label_smoothing: 0.1
+early_stopping_patience: 3
+num_workers: 2
+hub_repo: researchlens-vit-figure-type

@@ -1,0 +1,13 @@
+# N1 - SciBERT NER on SciERC
+model_name: allenai/scibert_scivocab_uncased
+model_tag: n1_ner
+run_name: scibert
+data_dir: /content/data/scierc
+epochs: 10
+lr: 3.0e-5
+batch_size: 16
+max_length: 256
+warmup_ratio: 0.1
+weight_decay: 0.01
+early_stopping_patience: 3
+hub_repo: researchlens-scibert-ner
