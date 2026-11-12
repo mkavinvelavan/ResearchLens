@@ -89,6 +89,8 @@ def classification_metrics(y_true, probs: np.ndarray, prefix: str = "test") -> d
                                  roc_auc_score, top_k_accuracy_score)
 
     y_true = np.asarray(y_true)
+    probs = np.asarray(probs, dtype=np.float64)
+    probs = probs / probs.sum(-1, keepdims=True)  # exact sum-to-1 (sklearn roc_auc is strict)
     y_pred = probs.argmax(-1)
     labels = list(range(len(CLASSES)))
     rep = classification_report(y_true, y_pred, labels=labels, target_names=CLASSES, output_dict=True, zero_division=0)

@@ -176,7 +176,8 @@ def build_late_fusion(results_root, model_tag="v2_figcls", image_run="vit_base",
         common = [k for k in img if k in txt]
         classes = json.loads((img_dir / "metrics.json").read_text())["classes"]
         probs = np.array([(np.array(img[k]["probs"]) + np.array(txt[k]["probs"])) / 2 for k in common])
-        y = np.array([classes.index(img[k]["gold"]) for k in common])
+        probs = probs / probs.sum(1, keepdims=True)  # saved probs are rounded -> renormalise to sum exactly to 1
+        y =np.array([classes.index(img[k]["gold"]) for k in common])
         from sklearn.metrics import classification_report, roc_auc_score
 
         rep = classification_report(y, probs.argmax(1), labels=list(range(len(classes))), target_names=classes,
