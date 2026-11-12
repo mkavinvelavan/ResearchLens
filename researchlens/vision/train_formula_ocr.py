@@ -135,7 +135,14 @@ def main():
     def collate(batch):
         pix = [b["pixel_values"] if b["pixel_values"].dim() == 3 else b["pixel_values"][0] for b in batch]
         lab = [b["labels"] if b["labels"].dim() == 1 else b["labels"][0] for b in batch]
-        return {"pixel_values": torch.stack(pix), "labels": torch.stack(lab)}
+        labels = torch.stack(lab)
+        # decoder inputs = labels shifted right (built here because the Trainer's label smoother removes `labels`
+        # before calling the model, so VisionEncoderDecoder cannot build them itself)
+        dec = labels.masked_fill(labels == -100, tok.pad_token_id)
+        dec_in = torch.full_like(dec, tok.pad_token_id)
+        dec_in[:, 0] = model.config.decoder_start_token_id
+        dec_in[:, 1:] = dec[:, :-1]
+        return {"pixel_values": torch.stack(pix), "labels": labels, "decoder_input_ids": dec_in}
 
     targs = make_training_args(
         len(ds["train"]), args.warmup_ratio, args_cls=Seq2SeqTrainingArguments,
