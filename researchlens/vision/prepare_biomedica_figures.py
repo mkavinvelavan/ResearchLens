@@ -44,7 +44,8 @@ RULES = [
     (r"chart|plot|graph|histogram|curve|scatter|heat ?map|forest|kaplan|survival|spectr|statistic|quantif", "plot"),
     (r"microscop|histolog|patholog|staining|photo|surgical|surgery|endoscop|x-ray|xray|radiograph|\bct\b|\bmri\b|"
      r"ultrasound|clinical|dermatolog|fundus|retina|animal|specimen|tissue|cell|imaging|scan|tomograph|"
-     r"angiograph|mammogra|patient|lesion|wound|plant|organism|blot|\bgel\b|electrophoresis", "photo"),
+     r"angiograph|mammogra|patient|lesion|wound|plant|organism|blot|\bgel\b|electrophoresis|natural image|immuno|"
+     r"tools and materials", "photo"),
 ]
 
 
@@ -124,7 +125,7 @@ def main():
     ap.add_argument("--n_train", type=int, default=800)
     ap.add_argument("--n_val", type=int, default=100)
     ap.add_argument("--n_test", type=int, default=300)
-    ap.add_argument("--per_concept", type=int, default=120, help="max figures taken from one concept (variety)")
+    ap.add_argument("--per_shard", type=int, default=100, help="max figures taken from one shard (variety of articles)")
     ap.add_argument("--max_side", type=int, default=512)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--scan_only", action="store_true")
@@ -165,13 +166,17 @@ def main():
     need = args.n_train + args.n_val + args.n_test
     kept: dict[str, list[dict]] = defaultdict(list)
     for cls in CLASSES:
-        concepts = by_class[cls][:]
-        rng.shuffle(concepts)
-        for c in concepts:
+        # round-robin over the class's concepts, a different random shard each time (many articles, all concepts)
+        queues = {c: rng.sample(by_concept[c], len(by_concept[c])) for c in by_class[cls]}
+        order = []
+        while any(queues.values()):
+            for c in sorted(queues):
+                if queues[c]:
+                    order.append((c, queues[c].pop()))
+        for c, shard in order:
             if len(kept[cls]) >= need:
                 break
-            take = min(args.per_concept, need - len(kept[cls]))
-            shard = rng.choice(by_concept[c])
+            take = min(args.per_shard, need - len(kept[cls]))
             got = 0
             try:
                 for key, parts in stream_samples(shard, token, take * 2):
