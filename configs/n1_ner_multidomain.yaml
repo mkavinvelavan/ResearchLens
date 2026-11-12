@@ -1,0 +1,20 @@
+# N1-MD - SciBERT NER on SciERC (AI) + ScienceIE (CS, Materials Science, Physics), shared labels Method/Material/Task/Metric
+# Same regularisation as the final single-domain SciBERT run, so the only change is the training data.
+model_name: allenai/scibert_scivocab_uncased
+model_tag: n1_ner
+run_name: scibert_multidomain
+data_dir: /content/data/scierc
+datasets: scierc,scienceie
+label_scheme: unified
+epochs: 8
+lr: 2.0e-5
+batch_size: 16
+max_length: 256
+warmup_ratio: 0.1
+weight_decay: 0.05
+hidden_dropout: 0.2
+attention_dropout: 0.1
+freeze_embeddings: true
+label_smoothing: 0.0
+early_stopping_patience: 2
+hub_repo: researchlens-scibert-ner-multidomain

@@ -38,6 +38,9 @@ def get_args():
     p.add_argument("--model_tag", default="n1_ner", help="folder name under results/")
     p.add_argument("--run_name", default="scibert")
     p.add_argument("--data_dir", default=str(LOCAL_DATA / "scierc"))
+    p.add_argument("--datasets", default="scierc", help="comma list: scierc,scienceie (multi-domain)")
+    p.add_argument("--label_scheme", default=None, choices=[None, "scierc", "unified"],
+                   help="scierc = 6 SciERC types; unified = Method/Material/Task/Metric (auto for multi-domain)")
     p.add_argument("--drive_root", default=None)
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--epochs", type=float, default=10)
@@ -76,9 +79,20 @@ def main():
     dirs = run_dirs(args.model_tag, args.run_name, args.seed, **({"drive_root": args.drive_root} if args.drive_root else {}))
     save_config(args, dirs["results"] / "config.json")
 
-    label2id = {l: i for i, l in enumerate(BIO_LABELS)}
+    datasets = [d.strip() for d in args.datasets.split(",") if d.strip()]
+    scheme = args.label_scheme or ("scierc" if datasets == ["scierc"] else "unified")
+    if scheme == "scierc":
+        labels = BIO_LABELS
+        splits = load_ner_splits(Path(args.data_dir))
+        for exs in splits.values():
+            for e in exs:
+                e["domain"] = "scierc"
+    else:
+        from researchlens.nlp.data_multidomain import UNIFIED_LABELS, load_multidomain_splits
+        labels = UNIFIED_LABELS
+        splits = load_multidomain_splits(Path(args.data_dir), datasets)
+    label2id = {l: i for i, l in enumerate(labels)}
     id2label = {i: l for l, i in label2id.items()}
-    splits = load_ner_splits(Path(args.data_dir))
 
     tok = AutoTokenizer.from_pretrained(args.model_name)
 
@@ -102,7 +116,7 @@ def main():
         ds[split] = raw.map(encode, batched=True, remove_columns=["id", "tokens", "ner_tags"])
 
     model = AutoModelForTokenClassification.from_pretrained(
-        args.model_name, num_labels=len(BIO_LABELS), id2label=id2label, label2id=label2id,
+        args.model_name, num_labels=len(labels), id2label=id2label, label2id=label2id,
         **dropout_overrides(args.model_name, args.hidden_dropout, args.attention_dropout),
     )
     apply_freezing(model, args.freeze_embeddings, args.freeze_layers)
@@ -192,11 +206,26 @@ def main():
         outputs[split] = (o, g, pr, rep)
     out, gold, pred, report = outputs["test"]
 
+    # ---- per-domain test scores (multi-domain runs): each domain scored only on the types it annotates ----
+    domain_scores = {}
+    test_domains = [e["domain"] for e in splits["test"]]
+    if len(set(test_domains)) > 1:
+        from researchlens.nlp.data_multidomain import restrict
+        for d in sorted(set(test_domains)):
+            idx = [i for i, x in enumerate(test_domains) if x == d]
+            gd = [restrict(gold[i], d) for i in idx]
+            pd_ = [restrict(pred[i], d) for i in idx]
+            domain_scores[d] = scores(gd, pd_)[0]
+            print(f"test [{d}]: F1 {domain_scores[d]['f1_micro']:.4f} | P {domain_scores[d]['precision_micro']:.4f} "
+                  f"| R {domain_scores[d]['recall_micro']:.4f} | n={len(idx)}")
+
     metrics = {
         "model": args.model_name,
         "run_name": args.run_name,
         "seed": args.seed,
         **{f"{split}_{k}": v for split, sc in split_scores.items() for k, v in sc.items() if k != "f1"},
+        **{f"test_{d}_{k}": v for d, sc in domain_scores.items() for k, v in sc.items() if k != "f1"},
+        "datasets": datasets, "label_scheme": scheme, "labels": labels,
         "gap_train_test_f1": split_scores["train"]["f1_micro"] - split_scores["test"]["f1_micro"],
         "gap_val_test_f1": split_scores["val"]["f1_micro"] - split_scores["test"]["f1_micro"],
         "per_class": {
@@ -217,7 +246,7 @@ def main():
     test_exs = splits["test"]
     save_predictions(
         (
-            {"id": ex["id"], "tokens": ex["tokens"][: len(g)], "gold": g, "pred": p}
+            {"id": ex["id"], "domain": ex.get("domain", "scierc"), "tokens": ex["tokens"][: len(g)], "gold": g, "pred": p}
             for ex, g, p in zip(test_exs, gold, pred)
         ),
         dirs["results"] / "predictions.jsonl",
