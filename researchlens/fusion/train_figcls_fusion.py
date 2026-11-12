@@ -100,7 +100,14 @@ def build_model(args, weights):
                     logits.float(), labels, weight=self.class_w, label_smoothing=args.label_smoothing)
             return out
 
-    return GatedFusionClassifier()
+    model = GatedFusionClassifier()
+    # transformers v5 can load some weights as non-contiguous views; safetensors refuses to save those
+    # ("You are trying to save a non contiguous tensor"), so make every parameter/buffer contiguous.
+    with torch.no_grad():
+        for t in list(model.parameters()) + list(model.buffers()):
+            if not t.data.is_contiguous():
+                t.data = t.data.contiguous()
+    return model
 
 
 def main():
