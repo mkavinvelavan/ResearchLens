@@ -66,3 +66,20 @@ validation metric stops improving, **3 seeds** (42, 43, 44).
 
 For the report, run each main model once more with LR ×0.5 and ×2 (seed 42) to show the results are not tuned by
 luck: e.g. `--lr 1.5e-5 --run_name scibert_lr1.5e-5`.
+
+# Metrics recorded for every model
+
+Logged **every epoch** on the training set (fixed 2,000-example slice for the figure models) and the validation set,
+and computed for the **best checkpoint on train, validation and test** (`train_*`, `val_*`, `test_*` in metrics.json).
+
+| NER (N1) | Classifiers (V2 image, N2 caption, M2 fusion) |
+|---|---|
+| entity precision / recall / F1 (micro, macro, weighted; strict) | accuracy, balanced accuracy, top-2 accuracy |
+| token accuracy (all tokens) | macro precision / recall / F1, weighted F1 |
+| entity-token accuracy (tokens inside gold entities) | Cohen's kappa, ROC-AUC (one-vs-rest), log loss |
+| sentence exact match | per-class precision / recall / F1, confusion matrix |
+| per-entity-type P / R / F1, confusion matrix | |
+
+Over-fitting evidence: `train_vs_val_*` curves (per epoch), `generalisation_gap` chart (train vs val vs test bars),
+`gap_train_test_*` values, loss curves (running training loss, end-of-epoch training-set loss, validation loss).
+`all_metrics.csv` lists every number for every run and seed.

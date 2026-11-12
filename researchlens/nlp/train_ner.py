@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from researchlens.common.results_io import HistoryCallback, save_config, save_metrics, save_predictions
+from researchlens.common.results_io import HistoryCallback, print_split_table, save_config, save_metrics, save_predictions
 from researchlens.common.utils import (
     make_training_args,
     LOCAL_DATA,
@@ -54,7 +54,7 @@ def get_args():
 def main():
     args = get_args()
     import torch
-    from seqeval.metrics import classification_report, f1_score, precision_score, recall_score
+    from seqeval.metrics import classification_report
     from seqeval.scheme import IOB2
     from transformers import (
         AutoModelForTokenClassification,
@@ -111,14 +111,25 @@ def main():
             pred.append(pr)
         return gold, pred
 
+    def scores(gold, pred) -> dict:
+        """Every NER metric: entity-level P/R/F1 (strict, micro/macro/weighted) + token accuracies."""
+        rep = classification_report(gold, pred, mode="strict", scheme=IOB2, output_dict=True, zero_division=0)
+        g = np.array([t for s in gold for t in s])
+        p_ = np.array([t for s in pred for t in s])
+        ent = g != "O"
+        out = {"accuracy": float((g == p_).mean()),                       # token accuracy (all tokens)
+               "entity_token_accuracy": float((g[ent] == p_[ent]).mean()) if ent.any() else 0.0,
+               "sentence_exact_match": float(np.mean([a == b for a, b in zip(gold, pred)]))}
+        for avg in ("micro", "macro", "weighted"):
+            for m, name in (("precision", "precision"), ("recall", "recall"), ("f1-score", "f1")):
+                out[f"{name}_{avg}"] = rep[f"{avg} avg"][m]
+        out["f1"] = out["f1_micro"]
+        return out, rep
+
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
         gold, pred = decode(np.argmax(logits, -1), labels)
-        return {
-            "precision": precision_score(gold, pred, mode="strict", scheme=IOB2),
-            "recall": recall_score(gold, pred, mode="strict", scheme=IOB2),
-            "f1": f1_score(gold, pred, mode="strict", scheme=IOB2),
-        }
+        return scores(gold, pred)[0]
 
     targs = make_training_args(
         len(ds["train"]), args.warmup_ratio,
@@ -133,7 +144,7 @@ def main():
         save_strategy="epoch",
         save_total_limit=2,
         load_best_model_at_end=True,
-        metric_for_best_model="f1",
+        metric_for_best_model="val_f1",
         greater_is_better=True,
         logging_steps=20,
         fp16=args.fp16 and torch.cuda.is_available(),
@@ -146,7 +157,8 @@ def main():
         model=model,
         args=targs,
         train_dataset=ds["train"],
-        eval_dataset=ds["validation"],
+        # evaluated every epoch: training set (to measure over-fitting) and validation set (for model selection)
+        eval_dataset={"train": ds["train"], "val": ds["validation"]},
         data_collator=DataCollatorForTokenClassification(tok),
         compute_metrics=compute_metrics,
         callbacks=[
@@ -161,21 +173,23 @@ def main():
     with Timer() as t:
         trainer.train(resume_from_checkpoint=resume)
 
-    # ---- final test evaluation on the best checkpoint (done once) ----
-    out = trainer.predict(ds["test"], metric_key_prefix="test")
-    gold, pred = decode(np.argmax(out.predictions, -1), out.label_ids)
-    report = classification_report(gold, pred, mode="strict", scheme=IOB2, output_dict=True, zero_division=0)
+    # ---- final evaluation of the best checkpoint on train / val / test (test is used only here) ----
+    split_scores, outputs = {}, {}
+    for split, d in (("train", ds["train"]), ("val", ds["validation"]), ("test", ds["test"])):
+        o = trainer.predict(d, metric_key_prefix=split)
+        g, pr = decode(np.argmax(o.predictions, -1), o.label_ids)
+        sc, rep = scores(g, pr)
+        split_scores[split] = sc
+        outputs[split] = (o, g, pr, rep)
+    out, gold, pred, report = outputs["test"]
 
     metrics = {
         "model": args.model_name,
         "run_name": args.run_name,
         "seed": args.seed,
-        "test_precision_micro": report["micro avg"]["precision"],
-        "test_recall_micro": report["micro avg"]["recall"],
-        "test_f1_micro": report["micro avg"]["f1-score"],
-        "test_precision_macro": report["macro avg"]["precision"],
-        "test_recall_macro": report["macro avg"]["recall"],
-        "test_f1_macro": report["macro avg"]["f1-score"],
+        **{f"{split}_{k}": v for split, sc in split_scores.items() for k, v in sc.items() if k != "f1"},
+        "gap_train_test_f1": split_scores["train"]["f1_micro"] - split_scores["test"]["f1_micro"],
+        "gap_val_test_f1": split_scores["val"]["f1_micro"] - split_scores["test"]["f1_micro"],
         "per_class": {
             k: {m: v[m] for m in ("precision", "recall", "f1-score", "support")}
             for k, v in report.items()
@@ -202,7 +216,8 @@ def main():
 
     trainer.save_model(str(dirs["final_model"]))
     tok.save_pretrained(str(dirs["final_model"]))
-    print(f"Test micro-F1 = {metrics['test_f1_micro']:.4f} | macro-F1 = {metrics['test_f1_macro']:.4f}")
+    print_split_table(split_scores, ["f1_micro", "f1_macro", "precision_micro", "recall_micro", "accuracy",
+                                     "entity_token_accuracy"])
     print(f"Results: {dirs['results']}")
 
     if args.push_to_hub:

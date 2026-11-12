@@ -15,12 +15,12 @@ from pathlib import Path
 
 import numpy as np
 
-from researchlens.common.results_io import HistoryCallback, save_config, save_metrics, save_predictions
+from researchlens.common.results_io import HistoryCallback, print_split_table, save_config, save_metrics, save_predictions
 from researchlens.common.utils import (
     make_training_args,
     LOCAL_DATA, Timer, count_parameters, hardware_info, latest_checkpoint, parse_args_with_config, run_dirs, set_seed,
 )
-from researchlens.vision.figdata import CLASSES, classification_metrics, read_manifest
+from researchlens.vision.figdata import epoch_metrics, split_view, train_eval_subset, CLASSES, classification_metrics, read_manifest
 
 
 def get_args():
@@ -73,23 +73,27 @@ def main():
     model = AutoModelForSequenceClassification.from_pretrained(
         args.model_name, num_labels=len(CLASSES), id2label=id2label, label2id={v: k for k, v in id2label.items()})
 
+    # fixed 2,000-example slice of the training set, scored every epoch (no augmentation) -> over-fitting curves
+    train_eval_items = train_eval_subset(splits["train"], 2000, args.seed)
+    train_eval_ds = to_ds(train_eval_items)
+
     def compute_metrics(ep):
         logits, labels = ep
         pred = logits.argmax(-1)
-        return {"accuracy": accuracy_score(labels, pred), "macro_f1": f1_score(labels, pred, average="macro")}
+        return epoch_metrics(labels, pred)
 
     targs = make_training_args(
         len(ds["train"]), args.warmup_ratio,
         output_dir=str(dirs["checkpoints"]), num_train_epochs=args.epochs, learning_rate=args.lr,
         per_device_train_batch_size=args.batch_size, per_device_eval_batch_size=args.batch_size * 2, weight_decay=args.weight_decay, lr_scheduler_type="linear",
         eval_strategy="epoch", save_strategy="epoch", save_total_limit=2, load_best_model_at_end=True,
-        metric_for_best_model="macro_f1", greater_is_better=True, logging_steps=20,
+        metric_for_best_model="val_macro_f1", greater_is_better=True, logging_steps=20,
         fp16=args.fp16 and torch.cuda.is_available(), report_to=["wandb"] if args.wandb else "none",
         run_name=f"{args.model_tag}-{args.run_name}-s{args.seed}", seed=args.seed,
     )
     hist_cb = HistoryCallback(dirs["results"] / "history.csv")
     trainer = Trainer(
-        model=model, args=targs, train_dataset=ds["train"], eval_dataset=ds["validation"],
+        model=model, args=targs, train_dataset=ds["train"], eval_dataset={"train": train_eval_ds, "val": ds["validation"]},
         data_collator=DataCollatorWithPadding(tok), compute_metrics=compute_metrics,
         callbacks=[hist_cb,
                    EarlyStoppingCallback(early_stopping_patience=args.early_stopping_patience)],
@@ -108,6 +112,16 @@ def main():
         "test_samples_per_second": out.metrics.get("test_samples_per_second"),
         **count_parameters(model), **hardware_info(),
     }
+    # ---- best checkpoint on the training slice and validation set too (train / val / test gap) ----
+    for split, d in (("train", train_eval_ds), ("val", ds["validation"])):
+        o = trainer.predict(d, metric_key_prefix=split)
+        lg = o.predictions[0] if isinstance(o.predictions, tuple) else o.predictions
+        pr_ = torch.softmax(torch.tensor(lg, dtype=torch.float), -1).numpy()
+        metrics.update(classification_metrics(o.label_ids, pr_, prefix=split))
+    metrics["gap_train_test_f1_macro"] = metrics["train_f1_macro"] - metrics["test_f1_macro"]
+    metrics["gap_train_test_accuracy"] = metrics["train_accuracy"] - metrics["test_accuracy"]
+    print_split_table(split_view(metrics), ["f1_macro", "accuracy", "balanced_accuracy", "precision_macro",
+                                            "recall_macro", "top2_accuracy", "cohen_kappa"])
     save_metrics(metrics, dirs["results"] / "metrics.json")
     save_predictions(
         ({"path": it["rel_path"], "caption": it["caption"], "gold": CLASSES[it["label"]],

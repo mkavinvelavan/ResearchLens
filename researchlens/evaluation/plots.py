@@ -67,28 +67,48 @@ def formatted_table(df: pd.DataFrame, keys: list[str]) -> pd.DataFrame:
 
 
 # ----------------------------------------------------------------------------- training curves
-def _train_eval(h: pd.DataFrame):
-    train = h[h["loss"].notna()] if "loss" in h else h.iloc[0:0]
-    ev = h[h["eval_loss"].notna()] if "eval_loss" in h else h.iloc[0:0]
-    return train, ev
+def eval_frame(h: pd.DataFrame) -> pd.DataFrame:
+    """One row per epoch with every eval_* column (works for single and train+val evaluation)."""
+    cols = [c for c in h.columns if c.startswith("eval_")]
+    if not cols:
+        return pd.DataFrame()
+    ev = h[h[cols].notna().any(axis=1)].copy()
+    ev["epoch"] = ev["epoch"].astype(float).round()
+    return ev.groupby("epoch", as_index=False)[cols].first()
+
+
+def _col(ev: pd.DataFrame, split: str, metric: str) -> str | None:
+    for c in (f"eval_{split}_{metric}", f"eval_{metric}" if split == "val" else None):
+        if c and c in ev:
+            return c
+    return None
 
 
 def plot_loss_curves(seeds: list[dict], title: str, out: Path) -> None:
     import matplotlib.pyplot as plt
 
     apply_style()
-    fig, ax = plt.subplots(figsize=(6, 3.6))
+    fig, ax = plt.subplots(figsize=(6.4, 3.8))
     for i, s in enumerate(seeds):
-        train, ev = _train_eval(s["history"])
-        lab = i == 0
-        ax.plot(train["epoch"], train["loss"], color=PALETTE[0], alpha=0.9 if lab else 0.35, lw=1.6,
-                label="Training loss" if lab else None)
-        ax.plot(ev["epoch"], ev["eval_loss"], color=PALETTE[1], alpha=0.9 if lab else 0.35, marker="o",
-                label="Validation loss" if lab else None)
+        h = s["history"]
+        first = i == 0
+        a = 0.9 if first else 0.35
+        if "loss" in h:
+            tr = h[h["loss"].notna()]
+            ax.plot(tr["epoch"], tr["loss"], color=PALETTE[0], alpha=a, lw=1.4,
+                    label="Training loss (running)" if first else None)
+        ev = eval_frame(h)
+        c_tr, c_val = _col(ev, "train", "loss"), _col(ev, "val", "loss")
+        if c_tr:
+            ax.plot(ev["epoch"], ev[c_tr], color=PALETTE[2], alpha=a, marker="s",
+                    label="Training-set loss (end of epoch)" if first else None)
+        if c_val:
+            ax.plot(ev["epoch"], ev[c_val], color=PALETTE[1], alpha=a, marker="o",
+                    label="Validation loss" if first else None)
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Loss")
     ax.set_title(title + (f"  ({len(seeds)} seeds)" if len(seeds) > 1 else ""))
-    ax.legend()
+    ax.legend(fontsize=8)
     save_fig(fig, out)
 
 
@@ -97,10 +117,10 @@ def plot_val_metric(seeds: list[dict], metric: str, label: str, title: str, out:
 
     apply_style()
     fig, ax = plt.subplots(figsize=(6, 3.6))
-    col = f"eval_{metric}"
     for i, s in enumerate(seeds):
-        _, ev = _train_eval(s["history"])
-        if col not in ev:
+        ev = eval_frame(s["history"])
+        col = _col(ev, "val", metric)
+        if not col:
             continue
         seed = s["metrics"].get("seed", i)
         ax.plot(ev["epoch"], ev[col] * 100, marker="o", color=PALETTE[i % len(PALETTE)], label=f"seed {seed}")
@@ -113,6 +133,82 @@ def plot_val_metric(seeds: list[dict], metric: str, label: str, title: str, out:
     if len(seeds) > 1:
         ax.legend()
     save_fig(fig, out)
+
+
+def plot_train_vs_val(seeds: list[dict], metric: str, label: str, title: str, out: Path) -> bool:
+    """Over-fitting curve: training-set vs validation score per epoch (mean over seeds, band = min-max)."""
+    import matplotlib.pyplot as plt
+
+    frames = []
+    for s in seeds:
+        ev = eval_frame(s["history"])
+        c_tr, c_val = _col(ev, "train", metric), _col(ev, "val", metric)
+        if c_tr and c_val:
+            frames.append(ev[["epoch", c_tr, c_val]].rename(columns={c_tr: "train", c_val: "val"}))
+    if not frames:
+        return False
+    d = pd.concat(frames).groupby("epoch").agg(["mean", "min", "max"])
+    apply_style()
+    fig, ax = plt.subplots(figsize=(6.4, 3.8))
+    for k, (split, name) in enumerate([("train", "Training set"), ("val", "Validation set")]):
+        ax.plot(d.index, d[(split, "mean")] * 100, marker="o", color=PALETTE[k], label=name)
+        ax.fill_between(d.index, d[(split, "min")] * 100, d[(split, "max")] * 100, color=PALETTE[k], alpha=0.15, lw=0)
+    gap = (d[("train", "mean")] - d[("val", "mean")]) * 100
+    ax.annotate(f"gap {gap.iloc[-1]:.1f} pts", (d.index[-1], d[("val", "mean")].iloc[-1] * 100),
+                textcoords="offset points", xytext=(-10, -16), ha="right", fontsize=8, color=INK_2)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel(f"{label} (%)")
+    ax.set_title(title)
+    ax.legend()
+    save_fig(fig, out)
+    return True
+
+
+def plot_split_gap(seeds: list[dict], metrics: dict[str, str], title: str, out: Path) -> pd.DataFrame | None:
+    """Train vs validation vs test bars for the final model (over-fitting summary)."""
+    import matplotlib.pyplot as plt
+
+    rows = []
+    for key, name in metrics.items():
+        for split in ("train", "val", "test"):
+            vals = [s["metrics"].get(f"{split}_{key}") for s in seeds]
+            vals = [v for v in vals if v is not None]
+            if vals:
+                rows.append({"metric": name, "split": split, "mean": np.mean(vals),
+                             "std": np.std(vals, ddof=1) if len(vals) > 1 else 0.0})
+    df = pd.DataFrame(rows)
+    if df.empty or df["split"].nunique() < 2:
+        return None
+    apply_style()
+    fig, ax = plt.subplots(figsize=(max(5.5, 2.2 * len(metrics)), 3.8))
+    names = list(metrics.values())
+    x = np.arange(len(names))
+    splits = [s for s in ("train", "val", "test") if s in set(df["split"])]
+    w = 0.8 / len(splits)
+    for k, split in enumerate(splits):
+        d = df[df.split == split].set_index("metric").reindex(names)
+        bars = ax.bar(x + (k - (len(splits) - 1) / 2) * w, d["mean"] * 100, w * 0.92, yerr=d["std"] * 100,
+                      color=PALETTE[k], label={"train": "Train", "val": "Validation", "test": "Test"}[split],
+                      capsize=2, error_kw={"elinewidth": 0.8, "ecolor": INK_2})
+        ax.bar_label(bars, fmt="%.1f", fontsize=8, color=INK_2, padding=2)
+    ax.set_xticks(x, names)
+    ax.set_ylabel("Score (%)")
+    ax.set_ylim(0, 108)
+    ax.set_title(title, pad=30)
+    ax.legend(ncol=3, loc="lower left", bbox_to_anchor=(0, 1.0))
+    save_fig(fig, out)
+    return df
+
+
+def all_metrics_table(runs: dict[str, list[dict]]) -> pd.DataFrame:
+    """Every numeric metric of every run and seed in one table (exported as all_metrics.csv)."""
+    rows = []
+    for name, seeds in runs.items():
+        for s in seeds:
+            r = {"run": name}
+            r.update({k: v for k, v in s["metrics"].items() if isinstance(v, (int, float)) and not isinstance(v, bool)})
+            rows.append(r)
+    return pd.DataFrame(rows)
 
 
 def plot_lr(seed: dict, title: str, out: Path) -> None:

@@ -46,6 +46,11 @@ class HistoryCallback(TrainerCallback):
         if not metrics or not state.is_world_process_zero:
             return
         key = "eval_" + (args.metric_for_best_model or "loss").removeprefix("eval_")
+        if key not in metrics:          # e.g. the training-set evaluation: keep it, print with the val line
+            self._pending = {**getattr(self, "_pending", {}), **metrics}
+            return
+        metrics = {**getattr(self, "_pending", {}), **metrics}
+        self._pending = {}
         val = metrics.get(key)
         better = val is not None and (self.best_value is None or
                                       (val > self.best_value if args.greater_is_better else val < self.best_value))
@@ -56,10 +61,16 @@ class HistoryCallback(TrainerCallback):
             parts.append(f"train loss {self.last_train_loss:.4f}")
         if "eval_loss" in metrics:
             parts.append(f"val loss {metrics['eval_loss']:.4f}")
-        for k, v in metrics.items():
-            if k.startswith("eval_") and k not in ("eval_loss", "eval_runtime", "eval_samples_per_second",
-                                                   "eval_steps_per_second", "eval_epoch") and isinstance(v, float):
-                parts.append(f"val {k[5:]} {v:.4f}")
+        show = ("loss", "f1", "macro_f1", "accuracy")
+        for split in ("train", "val"):
+            for m in show:
+                v = metrics.get(f"eval_{split}_{m}")
+                if isinstance(v, (int, float)):
+                    parts.append(f"{split} {m} {v:.4f}")
+        if not any(k.startswith(("eval_train_", "eval_val_")) for k in metrics):
+            for k, v in metrics.items():
+                if k.startswith("eval_") and k[5:] in show[1:] and isinstance(v, float):
+                    parts.append(f"val {k[5:]} {v:.4f}")
         parts.append("<- new best" if better else f"(best so far: epoch {self.best_epoch})")
         print(" | ".join(parts), flush=True)
 
@@ -112,3 +123,14 @@ def save_metrics(metrics: dict, path: Path) -> None:
 
 def save_config(args, path: Path) -> None:
     write_json(vars(args) if not isinstance(args, dict) else args, path)
+
+
+def print_split_table(split_scores: dict, keys: list[str]) -> None:
+    """Train / validation / test side by side - the over-fitting check at a glance."""
+    print("\n" + f"{'metric':<24}" + "".join(f"{s:>10}" for s in split_scores))
+    for k in keys:
+        print(f"{k:<24}" + "".join(f"{split_scores[s].get(k, float('nan'))*100:>9.2f}%" for s in split_scores))
+    if "train" in split_scores and "test" in split_scores:
+        main = keys[0]
+        gap = (split_scores["train"][main] - split_scores["test"][main]) * 100
+        print(f"train-test gap in {main}: {gap:.2f} points")

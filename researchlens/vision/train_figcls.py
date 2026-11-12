@@ -18,7 +18,7 @@ from pathlib import Path
 
 import numpy as np
 
-from researchlens.common.results_io import HistoryCallback, save_config, save_metrics, save_predictions
+from researchlens.common.results_io import HistoryCallback, print_split_table, save_config, save_metrics, save_predictions
 from researchlens.common.utils import (
     make_training_args,
     LOCAL_DATA,
@@ -30,7 +30,7 @@ from researchlens.common.utils import (
     run_dirs,
     set_seed,
 )
-from researchlens.vision.figdata import CLASSES, build_transforms, class_weights, classification_metrics, read_manifest
+from researchlens.vision.figdata import epoch_metrics, split_view, train_eval_subset, CLASSES, build_transforms, class_weights, classification_metrics, read_manifest
 
 
 def get_args():
@@ -122,10 +122,14 @@ def main():
             loss = loss_fn(outputs.logits, labels)
             return (loss, outputs) if return_outputs else loss
 
+    # fixed 2,000-example slice of the training set, scored every epoch (no augmentation) -> over-fitting curves
+    train_eval_items = train_eval_subset(splits["train"], 2000, args.seed)
+    train_eval_ds = FigureDS(train_eval_items, train=False)
+
     def compute_metrics(eval_pred):
         logits, labels = eval_pred
         pred = logits.argmax(-1)
-        return {"accuracy": accuracy_score(labels, pred), "macro_f1": f1_score(labels, pred, average="macro")}
+        return epoch_metrics(labels, pred)
 
     targs = make_training_args(
         len(ds["train"]), args.warmup_ratio,
@@ -140,7 +144,7 @@ def main():
         save_strategy="epoch",
         save_total_limit=2,
         load_best_model_at_end=True,
-        metric_for_best_model="macro_f1",
+        metric_for_best_model="val_macro_f1",
         greater_is_better=True,
         logging_steps=20,
         fp16=args.fp16 and torch.cuda.is_available(),
@@ -155,7 +159,7 @@ def main():
         model=model,
         args=targs,
         train_dataset=ds["train"],
-        eval_dataset=ds["validation"],
+        eval_dataset={"train": train_eval_ds, "val": ds["validation"]},
         data_collator=collate,
         compute_metrics=compute_metrics,
         callbacks=[
@@ -189,6 +193,16 @@ def main():
         **count_parameters(model),
         **hardware_info(),
     }
+    # ---- best checkpoint on the training slice and validation set too (train / val / test gap) ----
+    for split, d in (("train", train_eval_ds), ("val", ds["validation"])):
+        o = trainer.predict(d, metric_key_prefix=split)
+        lg = o.predictions[0] if isinstance(o.predictions, tuple) else o.predictions
+        pr_ = torch.softmax(torch.tensor(lg, dtype=torch.float), -1).numpy()
+        metrics.update(classification_metrics(o.label_ids, pr_, prefix=split))
+    metrics["gap_train_test_f1_macro"] = metrics["train_f1_macro"] - metrics["test_f1_macro"]
+    metrics["gap_train_test_accuracy"] = metrics["train_accuracy"] - metrics["test_accuracy"]
+    print_split_table(split_view(metrics), ["f1_macro", "accuracy", "balanced_accuracy", "precision_macro",
+                                            "recall_macro", "top2_accuracy", "cohen_kappa"])
     save_metrics(metrics, dirs["results"] / "metrics.json")
     save_predictions(
         (

@@ -61,25 +61,65 @@ def class_weights(train_items: list[dict]):
     return torch.tensor(counts.sum() / (len(CLASSES) * np.maximum(counts, 1)), dtype=torch.float)
 
 
-def classification_metrics(y_true, probs: np.ndarray) -> dict:
-    """The same test metrics for every figure classifier (so the report compares like with like)."""
-    from sklearn.metrics import classification_report, roc_auc_score
+def train_eval_subset(train_items: list[dict], n: int = 2000, seed: int = 0) -> list[dict]:
+    """Fixed random slice of the training set, evaluated every epoch to measure over-fitting cheaply."""
+    import random
+
+    items = list(train_items)
+    random.Random(seed).shuffle(items)
+    return items[:n]
+
+
+def epoch_metrics(y_true, y_pred) -> dict:
+    """Metrics logged every epoch (train subset and validation)."""
+    from sklearn.metrics import accuracy_score, balanced_accuracy_score, f1_score, precision_score, recall_score
+
+    return {
+        "accuracy": accuracy_score(y_true, y_pred),
+        "balanced_accuracy": balanced_accuracy_score(y_true, y_pred),
+        "macro_f1": f1_score(y_true, y_pred, average="macro", zero_division=0),
+        "macro_precision": precision_score(y_true, y_pred, average="macro", zero_division=0),
+        "macro_recall": recall_score(y_true, y_pred, average="macro", zero_division=0),
+    }
+
+
+def classification_metrics(y_true, probs: np.ndarray, prefix: str = "test") -> dict:
+    """Every classification metric for one split, keys prefixed (train_/val_/test_)."""
+    from sklearn.metrics import (balanced_accuracy_score, classification_report, cohen_kappa_score, log_loss,
+                                 roc_auc_score, top_k_accuracy_score)
 
     y_true = np.asarray(y_true)
     y_pred = probs.argmax(-1)
-    rep = classification_report(y_true, y_pred, labels=list(range(len(CLASSES))), target_names=CLASSES,
-                                output_dict=True, zero_division=0)
+    labels = list(range(len(CLASSES)))
+    rep = classification_report(y_true, y_pred, labels=labels, target_names=CLASSES, output_dict=True, zero_division=0)
     try:
-        auc = roc_auc_score(y_true, probs, multi_class="ovr", average="macro")
+        auc = roc_auc_score(y_true, probs, multi_class="ovr", average="macro", labels=labels)
     except ValueError:
         auc = None
-    return {
-        "test_accuracy": rep["accuracy"],
-        "test_f1_macro": rep["macro avg"]["f1-score"],
-        "test_precision_macro": rep["macro avg"]["precision"],
-        "test_recall_macro": rep["macro avg"]["recall"],
-        "test_f1_weighted": rep["weighted avg"]["f1-score"],
-        "test_roc_auc_macro_ovr": auc,
-        "per_class": {c: {m: rep[c][m] for m in ("precision", "recall", "f1-score", "support")} for c in CLASSES},
-        "classes": CLASSES,
+    out = {
+        "accuracy": rep["accuracy"],
+        "balanced_accuracy": balanced_accuracy_score(y_true, y_pred),
+        "top2_accuracy": top_k_accuracy_score(y_true, probs, k=2, labels=labels),
+        "f1_macro": rep["macro avg"]["f1-score"],
+        "precision_macro": rep["macro avg"]["precision"],
+        "recall_macro": rep["macro avg"]["recall"],
+        "f1_weighted": rep["weighted avg"]["f1-score"],
+        "cohen_kappa": cohen_kappa_score(y_true, y_pred),
+        "roc_auc_macro_ovr": auc,
+        "log_loss": log_loss(y_true, np.clip(probs, 1e-7, 1), labels=labels),
     }
+    out = {f"{prefix}_{k}": v for k, v in out.items()}
+    if prefix == "test":
+        out["per_class"] = {c: {m: rep[c][m] for m in ("precision", "recall", "f1-score", "support")} for c in CLASSES}
+        out["classes"] = CLASSES
+    return out
+
+
+SPLIT_KEYS = ["f1_macro", "accuracy", "balanced_accuracy", "precision_macro", "recall_macro", "top2_accuracy",
+              "cohen_kappa"]
+
+
+def split_view(metrics: dict) -> dict:
+    """{split: {metric: value}} for print_split_table."""
+    return {s: {k: metrics.get(f"{s}_{k}") or 0.0 for k in SPLIT_KEYS} for s in ("train", "val", "test")
+            if f"{s}_accuracy" in metrics}

@@ -31,7 +31,16 @@ def _write_tables(table: pd.DataFrame, keys: list[str], out_dir: Path) -> pd.Dat
 def _common_curves(seeds, metric, metric_label, nice, out):
     P.plot_loss_curves(seeds, f"{nice}: loss", out / "loss_curves")
     P.plot_val_metric(seeds, metric, metric_label, f"{nice}: validation {metric_label}", out / "val_metric")
+    P.plot_train_vs_val(seeds, metric, metric_label, f"{nice}: train vs validation {metric_label}",
+                        out / f"train_vs_val_{metric}")
+    P.plot_train_vs_val(seeds, "accuracy", "accuracy", f"{nice}: train vs validation accuracy",
+                        out / "train_vs_val_accuracy")
     P.plot_lr(seeds[0], f"{nice}: learning-rate schedule", out / "lr_schedule")
+
+
+def _export_all(runs, out: Path) -> None:
+    out.mkdir(parents=True, exist_ok=True)
+    P.all_metrics_table(runs).to_csv(out / "all_metrics.csv", index=False)
 
 
 # ============================================================================ N1  NER
@@ -52,12 +61,27 @@ def ner_report(results_root, model_tag="n1_ner", main_run="scibert", names=None)
     if main_run not in runs:
         raise FileNotFoundError(f"No finished '{main_run}' runs under {root / model_tag}. Found: {list(runs)}")
     out = root / model_tag / "report"
+    # older runs (before accuracy was logged): compute token accuracy from the saved predictions
+    for rs in runs.values():
+        for sd in rs:
+            m, preds = sd["metrics"], sd["predictions"]
+            if "test_accuracy" not in m and preds:
+                g = np.array([t for p in preds for t in p["gold"]])
+                pr = np.array([t for p in preds for t in p["pred"]])
+                m["test_accuracy"] = float((g == pr).mean())
+                m["test_entity_token_accuracy"] = float((g[g != "O"] == pr[g != "O"]).mean())
     seeds = runs[main_run]
     nice = "SciBERT NER (SciERC)"
 
     _common_curves(seeds, "f1", "F1", nice, out)
+    P.plot_split_gap(seeds, {"f1_micro": "Entity F1 (micro)", "f1_macro": "Entity F1 (macro)",
+                             "accuracy": "Token accuracy", "entity_token_accuracy": "Entity-token accuracy"},
+                     "NER: train vs validation vs test (best checkpoint)", out / "generalisation_gap")
+    _export_all(runs, out)
 
-    keys = ["test_f1_micro", "test_f1_macro", "test_precision_micro", "test_recall_micro"]
+    keys = ["test_f1_micro", "test_f1_macro", "test_f1_weighted", "test_precision_micro", "test_recall_micro",
+            "test_accuracy", "test_entity_token_accuracy", "test_sentence_exact_match",
+            "train_f1_micro", "val_f1_micro"]
     table = P.summary_table(runs, keys)
     pretty = _write_tables(table, keys, out)
     P.plot_run_comparison(table, ["test_f1_micro", "test_f1_macro"],
@@ -186,7 +210,16 @@ def figcls_report(results_root, model_tag="v2_figcls", main_run="vit_base") -> p
         _common_curves(seeds, "macro_f1", "macro-F1", f"Figure type, {nice}", sub)
 
     # ---- summary table + modality comparison ----
-    keys = ["test_accuracy", "test_f1_macro", "test_roc_auc_macro_ovr"]
+    _export_all(runs, out)
+    P.plot_split_gap(runs[main_run], {"f1_macro": "Macro-F1", "accuracy": "Accuracy",
+                                      "balanced_accuracy": "Balanced accuracy"},
+                     "Image-only ViT: train vs validation vs test", out / "generalisation_gap")
+    if "fusion_vit_scibert" in runs:
+        P.plot_split_gap(runs["fusion_vit_scibert"], {"f1_macro": "Macro-F1", "accuracy": "Accuracy",
+                                                      "balanced_accuracy": "Balanced accuracy"},
+                         "Gated fusion: train vs validation vs test", out / "runs" / "fusion_vit_scibert" / "generalisation_gap")
+    keys = ["test_accuracy", "test_f1_macro", "test_balanced_accuracy", "test_precision_macro", "test_recall_macro",
+            "test_top2_accuracy", "test_cohen_kappa", "test_roc_auc_macro_ovr", "train_f1_macro", "val_f1_macro"]
     table = P.summary_table(runs, keys)
     table["run"] = [RUN_LABELS.get(r, r).replace("\n", " ") for r in table["run"]]
     pretty = _write_tables(table, keys, out)
