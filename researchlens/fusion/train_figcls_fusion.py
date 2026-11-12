@@ -154,10 +154,11 @@ def main():
         report_to=["wandb"] if args.wandb else "none", run_name=f"{args.model_tag}-{args.run_name}-s{args.seed}",
         seed=args.seed,
     )
+    hist_cb = HistoryCallback(dirs["results"] / "history.csv")
     trainer = Trainer(
         model=model, args=targs, train_dataset=ds["train"], eval_dataset=ds["validation"], data_collator=collate,
         compute_metrics=compute_metrics,
-        callbacks=[HistoryCallback(dirs["results"] / "history.csv"),
+        callbacks=[hist_cb,
                    EarlyStoppingCallback(early_stopping_patience=args.early_stopping_patience)],
     )
     resume = latest_checkpoint(dirs["checkpoints"])
@@ -184,6 +185,7 @@ def main():
         "modality": "image + caption (gated fusion)",
         **classification_metrics(y, probs),
         "mean_gate_image": float(gates[:, 0].mean()), "mean_gate_text": float(gates[:, 1].mean()),
+        **hist_cb.summary(trainer.state),
         "best_val_macro_f1": trainer.state.best_metric, "train_seconds": round(t.seconds, 1),
         "test_samples_per_second": round(len(y) / ti.seconds, 2),
         **count_parameters(model), **hardware_info(),

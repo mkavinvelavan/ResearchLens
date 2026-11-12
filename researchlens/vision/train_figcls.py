@@ -150,6 +150,7 @@ def main():
         run_name=f"{args.model_tag}-{args.run_name}-s{args.seed}",
         seed=args.seed,
     )
+    hist_cb = HistoryCallback(dirs["results"] / "history.csv")
     trainer = WeightedTrainer(
         model=model,
         args=targs,
@@ -158,7 +159,7 @@ def main():
         data_collator=collate,
         compute_metrics=compute_metrics,
         callbacks=[
-            HistoryCallback(dirs["results"] / "history.csv"),
+            hist_cb,
             EarlyStoppingCallback(early_stopping_patience=args.early_stopping_patience),
         ],
     )
@@ -180,6 +181,7 @@ def main():
         "modality": "image",
         "freeze_backbone": args.freeze_backbone,
         **classification_metrics(out.label_ids, probs),
+        **hist_cb.summary(trainer.state),
         "best_val_macro_f1": trainer.state.best_metric,
         "best_checkpoint": trainer.state.best_model_checkpoint,
         "train_seconds": round(t.seconds, 1),

@@ -27,11 +27,56 @@ class HistoryCallback(TrainerCallback):
     def __init__(self, out_path: Path):
         self.out_path = Path(out_path)
         self.rows: list[dict[str, Any]] = []
+        self.max_epochs, self.best_epoch, self.best_value, self.last_train_loss = 0, None, None, None
         if self.out_path.exists():  # resumed run: keep earlier history
             with open(self.out_path, newline="", encoding="utf-8") as f:
                 self.rows = [dict(r) for r in csv.DictReader(f)]
 
+    # ---- readable progress in the notebook ----
+    def on_train_begin(self, args, state, control, **kwargs):
+        self.max_epochs = args.num_train_epochs
+        self.best_epoch, self.best_value, self.last_train_loss = None, None, None
+        print(f"\n=== Training: up to {int(self.max_epochs)} epochs, {state.max_steps} steps "
+              f"(early stopping may end it sooner) ===", flush=True)
+
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        print(f"\n--- Epoch {int(round(state.epoch or 0)) + 1}/{int(self.max_epochs)} started ---", flush=True)
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if not metrics or not state.is_world_process_zero:
+            return
+        key = "eval_" + (args.metric_for_best_model or "loss").removeprefix("eval_")
+        val = metrics.get(key)
+        better = val is not None and (self.best_value is None or
+                                      (val > self.best_value if args.greater_is_better else val < self.best_value))
+        if better:
+            self.best_value, self.best_epoch = val, round(state.epoch or 0)
+        parts = [f"Epoch {round(state.epoch or 0)}/{int(self.max_epochs)} done"]
+        if self.last_train_loss is not None:
+            parts.append(f"train loss {self.last_train_loss:.4f}")
+        if "eval_loss" in metrics:
+            parts.append(f"val loss {metrics['eval_loss']:.4f}")
+        for k, v in metrics.items():
+            if k.startswith("eval_") and k not in ("eval_loss", "eval_runtime", "eval_samples_per_second",
+                                                   "eval_steps_per_second", "eval_epoch") and isinstance(v, float):
+                parts.append(f"val {k[5:]} {v:.4f}")
+        parts.append("<- new best" if better else f"(best so far: epoch {self.best_epoch})")
+        print(" | ".join(parts), flush=True)
+
+    def on_train_end(self, args, state, control, **kwargs):
+        ran = round(state.epoch or 0, 2)
+        stopped = " (stopped early: validation score stopped improving)" if ran < self.max_epochs - 0.01 else ""
+        print(f"\n=== Finished: trained {ran} of {int(self.max_epochs)} epochs{stopped}. "
+              f"Best epoch = {self.best_epoch} (val score {self.best_value}) - this checkpoint is used for testing ===",
+              flush=True)
+
+    def summary(self, state) -> dict:
+        return {"epochs_trained": round(state.epoch or 0, 2), "max_epochs": self.max_epochs,
+                "best_epoch": self.best_epoch, "total_steps": state.global_step}
+
     def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs and "loss" in logs:
+            self.last_train_loss = logs["loss"]
         if not logs or not state.is_world_process_zero:
             return
         row = {"step": state.global_step, "epoch": round(state.epoch or 0.0, 4)}
