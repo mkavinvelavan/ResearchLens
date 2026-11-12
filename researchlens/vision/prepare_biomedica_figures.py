@@ -129,6 +129,7 @@ def main():
     ap.add_argument("--max_side", type=int, default=512)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--scan_only", action="store_true")
+    ap.add_argument("--max_shards", type=int, default=None, help="(ignored; kept for older notebooks)")
     args = ap.parse_args()
 
     from huggingface_hub import HfApi, get_token
