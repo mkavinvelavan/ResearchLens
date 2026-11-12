@@ -14,7 +14,6 @@ config.json, embeddings.npy}
 from __future__ import annotations
 
 import argparse
-import csv
 from pathlib import Path
 
 import numpy as np
@@ -30,7 +29,7 @@ from researchlens.common.utils import (
     run_dirs,
     set_seed,
 )
-from researchlens.vision.prepare_spiqa_figures import CLASSES
+from researchlens.vision.figdata import CLASSES, build_transforms, class_weights, classification_metrics, read_manifest
 
 
 def get_args():
@@ -58,40 +57,11 @@ def get_args():
     return parse_args_with_config(p)
 
 
-def read_manifest(data_dir: Path) -> dict[str, list[tuple[str, int]]]:
-    splits: dict[str, list[tuple[str, int]]] = {"train": [], "validation": [], "test": []}
-    with open(data_dir / "manifest.csv", newline="", encoding="utf-8") as f:
-        for r in csv.DictReader(f):
-            splits[r["split"]].append((str(data_dir / r["path"]), CLASSES.index(r["label"])))
-    return splits
-
-
-def build_transforms(processor, train: bool):
-    from PIL import Image, ImageOps
-    from torchvision import transforms as T
-
-    size = processor.size.get("height") or processor.size.get("shortest_edge") or 224
-    mean, std = processor.image_mean, processor.image_std
-
-    def pad_to_square(img: Image.Image) -> Image.Image:
-        # figures are often very wide/tall: pad with white instead of distorting them
-        img = img.convert("RGB")
-        w, h = img.size
-        s = max(w, h)
-        return ImageOps.expand(img, ((s - w) // 2, (s - h) // 2, s - w - (s - w) // 2, s - h - (s - h) // 2), fill="white")
-
-    ops = [T.Lambda(pad_to_square), T.Resize((size, size))]
-    if train:  # no flips: text and axes must stay readable
-        ops += [T.RandomResizedCrop(size, scale=(0.85, 1.0), ratio=(0.9, 1.1)), T.ColorJitter(0.2, 0.2, 0.1)]
-    ops += [T.ToTensor(), T.Normalize(mean, std)]
-    return T.Compose(ops)
-
-
 def main():
     args = get_args()
     import torch
     from PIL import Image
-    from sklearn.metrics import accuracy_score, classification_report, f1_score, roc_auc_score
+    from sklearn.metrics import accuracy_score, f1_score
     from torch.utils.data import Dataset
     from transformers import (
         AutoImageProcessor,
@@ -107,7 +77,6 @@ def main():
 
     data_dir = Path(args.data_dir)
     splits = read_manifest(data_dir)
-    print({k: len(v) for k, v in splits.items()})
 
     processor = AutoImageProcessor.from_pretrained(args.model_name)
 
@@ -119,8 +88,8 @@ def main():
             return len(self.items)
 
         def __getitem__(self, i):
-            path, label = self.items[i]
-            return {"pixel_values": self.tf(Image.open(path)), "labels": label}
+            it = self.items[i]
+            return {"pixel_values": self.tf(Image.open(it["path"])), "labels": it["label"]}
 
     def collate(batch):
         return {
@@ -139,8 +108,7 @@ def main():
         for n, p_ in model.named_parameters():
             p_.requires_grad = n.startswith("classifier")
 
-    counts = np.bincount([l for _, l in splits["train"]], minlength=len(CLASSES)).astype(float)
-    weights = torch.tensor(counts.sum() / (len(CLASSES) * np.maximum(counts, 1)), dtype=torch.float)
+    weights = class_weights(splits["train"])
 
     class WeightedTrainer(Trainer):
         def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
@@ -203,28 +171,14 @@ def main():
     # ---- final test evaluation on the best checkpoint ----
     out = trainer.predict(ds["test"], metric_key_prefix="test")
     logits = out.predictions
-    probs = torch.softmax(torch.tensor(logits, dtype=torch.float), -1).numpy()
-    y, yhat = out.label_ids, logits.argmax(-1)
-    rep = classification_report(y, yhat, labels=list(range(len(CLASSES))), target_names=CLASSES,
-                                output_dict=True, zero_division=0)
-    try:
-        auc = roc_auc_score(y, probs, multi_class="ovr", average="macro")
-    except ValueError:
-        auc = None
-
+    probs = torch.softmax(torch.tensor(out.predictions, dtype=torch.float), -1).numpy()
     metrics = {
         "model": args.model_name,
         "run_name": args.run_name,
         "seed": args.seed,
+        "modality": "image",
         "freeze_backbone": args.freeze_backbone,
-        "test_accuracy": rep["accuracy"],
-        "test_f1_macro": rep["macro avg"]["f1-score"],
-        "test_precision_macro": rep["macro avg"]["precision"],
-        "test_recall_macro": rep["macro avg"]["recall"],
-        "test_f1_weighted": rep["weighted avg"]["f1-score"],
-        "test_roc_auc_macro_ovr": auc,
-        "per_class": {c: {m: rep[c][m] for m in ("precision", "recall", "f1-score", "support")} for c in CLASSES},
-        "classes": CLASSES,
+        **classification_metrics(out.label_ids, probs),
         "best_val_macro_f1": trainer.state.best_metric,
         "best_checkpoint": trainer.state.best_model_checkpoint,
         "train_seconds": round(t.seconds, 1),
@@ -235,9 +189,9 @@ def main():
     save_metrics(metrics, dirs["results"] / "metrics.json")
     save_predictions(
         (
-            {"path": str(Path(pth).relative_to(data_dir)), "gold": CLASSES[int(g)], "pred": CLASSES[int(p_)],
-             "probs": [round(float(x), 5) for x in pr]}
-            for (pth, _), g, p_, pr in zip(splits["test"], y, yhat, probs)
+            {"path": it["rel_path"], "caption": it["caption"], "gold": CLASSES[it["label"]],
+             "pred": CLASSES[int(pr.argmax())], "probs": [round(float(x), 5) for x in pr]}
+            for it, pr in zip(splits["test"], probs)
         ),
         dirs["results"] / "predictions.jsonl",
     )

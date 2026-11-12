@@ -11,7 +11,9 @@ The project has three tracks with matching weight: **NLP**, **Vision**, and **Mu
 | NLP | N2 SciBERT relation extraction | SciERC | relation F1 | next |
 | NLP | N3 SciBERT evidence reranker | QASPER | evidence F1, MRR | planned |
 | Vision | V1 ViT layout detector | DocLayNet | mAP | planned |
-| Vision | V2 ViT figure-type classifier | SPIQA | accuracy, macro-F1 | ✅ ready to train |
+| Vision | V2 ViT figure-type classifier (image) | SPIQA | accuracy, macro-F1 | ✅ ready to train |
+| NLP | V2-T SciBERT figure-type classifier (caption) | SPIQA | accuracy, macro-F1 | ✅ ready to train |
+| Fusion | V2-F ViT + SciBERT gated fusion (image + caption) | SPIQA | accuracy, macro-F1, McNemar | ✅ ready to train |
 | Vision | V3 ViT formula recognizer | im2latex-100k | exact match, edit distance | planned |
 | Fusion | F1 SigLIP cross-modal retriever | SPIQA | Recall@k | planned |
 | Fusion | F2 Qwen3-VL QLoRA (optional) | SPIQA | answer accuracy | stretch |
@@ -41,9 +43,9 @@ notebooks/               Colab launchers: N1_*, V2_*, and R0_results_all_models
 researchlens/
   common/                seeding, Drive paths, result files, Hugging Face upload
   evaluation/            plot style, plotting functions, one report() per model
-  nlp/                   SciERC loader, NER training
-  vision/                SPIQA figure dataset builder, ViT training, attention maps
-  fusion/                cross-modal retrieval (coming)
+  nlp/                   SciERC loader, NER training, caption classifier
+  vision/                SPIQA figure dataset builder, shared figure data, ViT training, attention maps
+  fusion/                ViT + SciBERT gated fusion; cross-modal retrieval (coming)
 app/                     ResearchLens application (Part 3, coming)
 ```
 
@@ -63,6 +65,11 @@ Drive: ResearchLens/results/<model_tag>/<run_name>/seed_<n>/
 Graphs can be regenerated at any time without retraining.
 
 ### Graphs produced so far
+
+V2 compares **text vs vision vs fusion on the same SPIQA figures**: caption-only SciBERT, image-only ViT,
+probability averaging (no training) and a trained gated fusion. Extra V2 outputs: `modality_comparison`,
+`per_class_by_modality`, `fusion_gate_by_class` (how much each class relies on image vs caption) and
+`significance_mcnemar.csv` (is fusion significantly better than each single modality?).
 
 | N1 NER | V2 figure classifier |
 |---|---|
@@ -86,6 +93,8 @@ python -m researchlens.vision.prepare_spiqa_figures --out_dir /content/data/spiq
 python -m researchlens.vision.train_figcls --config configs/v2_figcls.yaml --seed 42 --push_to_hub
 python -m researchlens.vision.train_figcls --config configs/v2_figcls.yaml --freeze_backbone --run_name vit_linear_probe
 python -m researchlens.vision.train_figcls --config configs/v2_figcls.yaml --model_name microsoft/resnet-50 --run_name resnet50
+python -m researchlens.nlp.train_caption_cls --config configs/v2_caption.yaml --seed 42
+python -m researchlens.fusion.train_figcls_fusion --config configs/v2_fusion.yaml --seed 42
 ```
 
 ## Datasets

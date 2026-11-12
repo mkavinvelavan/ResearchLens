@@ -98,53 +98,186 @@ def ner_report(results_root, model_tag="n1_ner", main_run="scibert", names=None)
 
 
 # ============================================================================ V2  figure classifier
+RUN_LABELS = {
+    "scibert_caption": "Caption only\n(SciBERT)",
+    "resnet50": "Image only\n(ResNet-50)",
+    "vit_linear_probe": "Image only\n(ViT probe)",
+    "vit_base": "Image only\n(ViT)",
+    "late_fusion_avg": "Image+caption\n(avg probs)",
+    "fusion_vit_scibert": "Image+caption\n(gated fusion)",
+}
+
+
+def build_late_fusion(results_root, model_tag="v2_figcls", image_run="vit_base", text_run="scibert_caption",
+                      out_run="late_fusion_avg") -> None:
+    """Zero-training baseline: average the probabilities of the image-only and caption-only models
+    (same seed, same test figures). Saved as a normal run folder so every plot can use it."""
+    import json
+
+    from researchlens.common.utils import write_json
+
+    base = Path(results_root) / model_tag
+    for img_dir in sorted((base / image_run).glob("seed_*")):
+        txt_dir = base / text_run / img_dir.name
+        if not (img_dir / "predictions.jsonl").exists() or not (txt_dir / "predictions.jsonl").exists():
+            continue
+        img = {r["path"]: r for r in map(json.loads, open(img_dir / "predictions.jsonl", encoding="utf-8"))}
+        txt = {r["path"]: r for r in map(json.loads, open(txt_dir / "predictions.jsonl", encoding="utf-8"))}
+        common = [k for k in img if k in txt]
+        classes = json.loads((img_dir / "metrics.json").read_text())["classes"]
+        probs = np.array([(np.array(img[k]["probs"]) + np.array(txt[k]["probs"])) / 2 for k in common])
+        y = np.array([classes.index(img[k]["gold"]) for k in common])
+        from sklearn.metrics import classification_report, roc_auc_score
+
+        rep = classification_report(y, probs.argmax(1), labels=list(range(len(classes))), target_names=classes,
+                                    output_dict=True, zero_division=0)
+        out = base / out_run / img_dir.name
+        out.mkdir(parents=True, exist_ok=True)
+        write_json({
+            "run_name": out_run, "seed": int(img_dir.name.split("_")[1]), "modality": "image + caption (prob. average)",
+            "test_accuracy": rep["accuracy"], "test_f1_macro": rep["macro avg"]["f1-score"],
+            "test_precision_macro": rep["macro avg"]["precision"], "test_recall_macro": rep["macro avg"]["recall"],
+            "test_roc_auc_macro_ovr": roc_auc_score(y, probs, multi_class="ovr", average="macro"),
+            "per_class": {c: {m: rep[c][m] for m in ("precision", "recall", "f1-score", "support")} for c in classes},
+            "classes": classes, "train_seconds": 0, "total_params": None,
+        }, out / "metrics.json")
+        with open(out / "predictions.jsonl", "w", encoding="utf-8") as f:
+            for k, pr in zip(common, probs):
+                f.write(json.dumps({"path": k, "gold": img[k]["gold"], "pred": classes[int(pr.argmax())],
+                                    "probs": [round(float(x), 5) for x in pr]}) + "\n")
+
+
+def mcnemar(a_correct: np.ndarray, b_correct: np.ndarray) -> dict:
+    """Exact McNemar test on paired predictions: is model B significantly different from model A?"""
+    from scipy.stats import binomtest
+
+    b01 = int(np.sum(a_correct & ~b_correct))   # A right, B wrong
+    b10 = int(np.sum(~a_correct & b_correct))   # A wrong, B right
+    n = b01 + b10
+    p = binomtest(b10, n, 0.5).pvalue if n else 1.0
+    return {"only_A_correct": b01, "only_B_correct": b10, "p_value": p}
+
+
+def _correct_by_path(run: dict) -> dict:
+    return {p["path"]: p["gold"] == p["pred"] for p in run["predictions"]}
+
+
 def figcls_report(results_root, model_tag="v2_figcls", main_run="vit_base") -> pd.DataFrame:
+    import matplotlib.pyplot as plt
+
+    from .style import INK_2, PALETTE, apply_style, save_fig
+
     root = Path(results_root)
+    build_late_fusion(root, model_tag)
     runs = P.find_runs(root, model_tag)
     if main_run not in runs:
         raise FileNotFoundError(f"No finished '{main_run}' runs under {root / model_tag}. Found: {list(runs)}")
+    order = [r for r in RUN_LABELS if r in runs] + [r for r in runs if r not in RUN_LABELS]
+    runs = {r: runs[r] for r in order}
     out = root / model_tag / "report"
-    seeds = runs[main_run]
-    nice = "ViT figure classifier (SPIQA)"
-    classes = seeds[0]["metrics"]["classes"]
+    classes = runs[main_run][0]["metrics"]["classes"]
 
-    _common_curves(seeds, "macro_f1", "macro-F1", nice, out)
+    # ---- training curves for every trained run ----
+    for name, seeds in runs.items():
+        if seeds[0]["history"].empty:
+            continue
+        nice = RUN_LABELS.get(name, name).replace("\n", " ")
+        sub = out if name == main_run else out / "runs" / name
+        _common_curves(seeds, "macro_f1", "macro-F1", f"Figure type, {nice}", sub)
 
+    # ---- summary table + modality comparison ----
     keys = ["test_accuracy", "test_f1_macro", "test_roc_auc_macro_ovr"]
     table = P.summary_table(runs, keys)
+    table["run"] = [RUN_LABELS.get(r, r).replace("\n", " ") for r in table["run"]]
     pretty = _write_tables(table, keys, out)
-    P.plot_run_comparison(table, ["test_accuracy", "test_f1_macro"],
+    table_plot = table.copy()
+    table_plot["run"] = [RUN_LABELS.get(r, r) for r in runs]
+    P.plot_run_comparison(table_plot, ["test_accuracy", "test_f1_macro"],
                           {"test_accuracy": "Accuracy", "test_f1_macro": "Macro-F1"},
-                          "Figure classification: ViT vs baselines", out / "baseline_comparison")
-    P.plot_per_class(seeds, classes, "Figure classification: per-class scores", out / "per_class")
+                          "Figure-type classification: text vs vision vs fusion", out / "modality_comparison")
 
-    preds = seeds[0]["predictions"]
-    y = [p["gold"] for p in preds]
-    yhat = [p["pred"] for p in preds]
-    P.plot_confusion(y, yhat, classes, "Figure classification: confusion matrix", out / "confusion_matrix")
-    P.plot_confusion(y, yhat, classes, "Figure classification: confusion matrix (counts)",
-                     out / "confusion_matrix_counts", normalize=False)
-
-    probs = np.array([p["probs"] for p in preds])
-    y_idx = np.array([classes.index(c) for c in y])
-    P.plot_roc_pr(y_idx, probs, classes, nice, out / "roc_pr_curves")
-
-    if "embeddings" in seeds[0]:
-        P.plot_embedding_2d(seeds[0]["embeddings"], y, classes, "t-SNE of fine-tuned ViT embeddings (test set)",
-                            out / "tsne_embeddings")
-    # confidence: correct vs wrong
-    conf = probs.max(1)
-    correct = np.array(y) == np.array(yhat)
-    import matplotlib.pyplot as plt
-    from .style import PALETTE, apply_style, save_fig
-
+    # per-class F1 for each modality (key multimodal graph)
+    show = [r for r in ("scibert_caption", "vit_base", "late_fusion_avg", "fusion_vit_scibert") if r in runs]
     apply_style()
-    fig, ax = plt.subplots(figsize=(6, 3.4))
-    bins = np.linspace(0, 1, 21)
-    ax.hist(conf[correct], bins=bins, color=PALETTE[0], alpha=0.75, label="Correct", edgecolor="#fcfcfb")
-    ax.hist(conf[~correct], bins=bins, color=PALETTE[1], alpha=0.75, label="Wrong", edgecolor="#fcfcfb")
-    ax.set(xlabel="Max softmax confidence", ylabel="Test figures", title="Confidence of correct vs wrong predictions")
-    ax.legend()
-    save_fig(fig, out / "confidence_hist")
+    fig, ax = plt.subplots(figsize=(max(7, 1.6 * len(classes)), 3.9))
+    w = 0.8 / len(show)
+    x = np.arange(len(classes))
+    for k, r in enumerate(show):
+        vals = np.array([[s["metrics"]["per_class"][c]["f1-score"] for c in classes] for s in runs[r]])
+        ax.bar(x + (k - (len(show) - 1) / 2) * w, vals.mean(0) * 100, w * 0.92,
+               yerr=vals.std(0, ddof=1) * 100 if len(vals) > 1 else None, color=PALETTE[k],
+               label=RUN_LABELS[r].replace("\n", " "), capsize=2, error_kw={"elinewidth": 0.8, "ecolor": INK_2})
+    ax.set_xticks(x, classes)
+    ax.set_ylabel("Test F1 (%)")
+    ax.set_ylim(0, 100)
+    ax.set_title("Per-class F1 by modality", pad=30)
+    ax.legend(ncol=len(show), loc="lower left", bbox_to_anchor=(0, 1.0), fontsize=8)
+    save_fig(fig, out / "per_class_by_modality")
+
+    # ---- significance: does fusion beat each single modality? (McNemar, seed-matched) ----
+    sig_rows = []
+    best = "fusion_vit_scibert" if "fusion_vit_scibert" in runs else ("late_fusion_avg" if "late_fusion_avg" in runs else None)
+    if best:
+        for other in [r for r in runs if r != best]:
+            for sb in runs[best]:
+                sa = next((s for s in runs[other] if s["metrics"].get("seed") == sb["metrics"].get("seed")), None)
+                if not sa:
+                    continue
+                ca, cb = _correct_by_path(sa), _correct_by_path(sb)
+                common = [k for k in cb if k in ca]
+                res = mcnemar(np.array([ca[k] for k in common]), np.array([cb[k] for k in common]))
+                sig_rows.append({"model_A": other, "model_B": best, "seed": sb["metrics"].get("seed"), "n": len(common), **res})
+        pd.DataFrame(sig_rows).to_csv(out / "significance_mcnemar.csv", index=False)
+
+    # ---- detailed plots for the main image model and the fusion model ----
+    for name in [main_run] + [r for r in ("fusion_vit_scibert", "scibert_caption") if r in runs]:
+        seeds = runs[name]
+        nice = RUN_LABELS.get(name, name).replace("\n", " ")
+        sub = out if name == main_run else out / "runs" / name
+        P.plot_per_class(seeds, classes, f"{nice}: per-class scores", sub / "per_class")
+        preds = seeds[0]["predictions"]
+        y = [p["gold"] for p in preds]
+        yhat = [p["pred"] for p in preds]
+        P.plot_confusion(y, yhat, classes, f"{nice}: confusion matrix", sub / "confusion_matrix")
+        P.plot_confusion(y, yhat, classes, f"{nice}: confusion matrix (counts)", sub / "confusion_matrix_counts",
+                         normalize=False)
+        probs = np.array([p["probs"] for p in preds])
+        y_idx = np.array([classes.index(c) for c in y])
+        P.plot_roc_pr(y_idx, probs, classes, nice, sub / "roc_pr_curves")
+        if "embeddings" in seeds[0]:
+            P.plot_embedding_2d(seeds[0]["embeddings"], y, classes, f"t-SNE of {nice} embeddings (test set)",
+                                sub / "tsne_embeddings")
+        conf, correct = probs.max(1), np.array(y) == np.array(yhat)
+        apply_style()
+        fig, ax = plt.subplots(figsize=(6, 3.4))
+        bins = np.linspace(0, 1, 21)
+        ax.hist(conf[correct], bins=bins, color=PALETTE[0], alpha=0.75, label="Correct", edgecolor="#fcfcfb")
+        ax.hist(conf[~correct], bins=bins, color=PALETTE[1], alpha=0.75, label="Wrong", edgecolor="#fcfcfb")
+        ax.set(xlabel="Max softmax confidence", ylabel="Test figures", title=f"{nice}: confidence, correct vs wrong")
+        ax.legend()
+        save_fig(fig, sub / "confidence_hist")
+
+    # ---- fusion gate: how much each class relies on image vs caption ----
+    if "fusion_vit_scibert" in runs:
+        preds = [p for s in runs["fusion_vit_scibert"] for p in s["predictions"] if "gate_image" in p]
+        g = pd.DataFrame(preds).groupby("gold")["gate_image"].agg(["mean", "std"]).reindex(classes)
+        apply_style()
+        fig, ax = plt.subplots(figsize=(6.5, 3.4))
+        yy = np.arange(len(classes))
+        ax.barh(yy, g["mean"] * 100, color=PALETTE[0], label="Image (ViT)", height=0.6)
+        ax.barh(yy, (1 - g["mean"]) * 100, left=g["mean"] * 100, color=PALETTE[1], label="Caption (SciBERT)",
+                height=0.6)
+        for i, v in enumerate(g["mean"]):
+            ax.text(v * 100 - 2, i, f"{v*100:.0f}%", va="center", ha="right", fontsize=8, color="white")
+        ax.axvline(50, color=INK_2, lw=0.8, ls="--")
+        ax.set_yticks(yy, classes)
+        ax.invert_yaxis()
+        ax.set_xlim(0, 100)
+        ax.set_xlabel("Average fusion gate weight (%)")
+        ax.grid(False)
+        ax.set_title("Which modality the fusion model trusts, per true class", pad=30)
+        ax.legend(ncol=2, loc="lower left", bbox_to_anchor=(0, 1.0))
+        save_fig(fig, out / "fusion_gate_by_class")
+
     print(f"Figure-classifier report written to {out}")
     return pretty

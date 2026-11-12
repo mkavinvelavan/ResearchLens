@@ -48,7 +48,7 @@ def main():
     from transformers import AutoImageProcessor, AutoModelForImageClassification
 
     from researchlens.evaluation.style import apply_style, save_fig
-    from researchlens.vision.train_figcls import build_transforms
+    from researchlens.vision.figdata import build_transforms
 
     apply_style()
     res, data = Path(args.results_dir), Path(args.data_dir)

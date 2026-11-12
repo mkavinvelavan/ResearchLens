@@ -20,8 +20,11 @@ import csv
 import json
 import random
 import zipfile
+import io
 from collections import Counter, defaultdict
 from pathlib import Path
+
+from PIL import Image
 
 CLASSES = ["plot", "schematic", "photo", "table", "other"]
 REPO = "google/spiqa"
@@ -77,6 +80,8 @@ def main():
     ap.add_argument("--out_dir", default="/content/data/spiqa_figs")
     ap.add_argument("--cache_dir", default="/content/data/spiqa_raw")
     ap.add_argument("--max_per_class", type=int, default=3000, help="cap for train (val/test use 1/4 of it)")
+    ap.add_argument("--max_side", type=int, default=512,
+                    help="downscale so the longest side <= this (models use 224px); keeps the dataset small enough to cache on Drive")
     ap.add_argument("--seed", type=int, default=42)
     args = ap.parse_args()
 
@@ -113,10 +118,16 @@ def main():
                 if m is None:
                     missing += 1
                     continue
-                dst = out / split / label / f"{pid}__{name}"
+                dst = (out / split / label / f"{pid}__{name}").with_suffix(".png")
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 if not dst.exists():
-                    dst.write_bytes(zf.read(m))
+                    try:
+                        img = Image.open(io.BytesIO(zf.read(m))).convert("RGB")
+                    except Exception:
+                        missing += 1
+                        continue
+                    img.thumbnail((args.max_side, args.max_side))
+                    img.save(dst, optimize=True)
                 rows.append({"split": split, "label": label, "path": str(dst.relative_to(out)), "paper_id": pid, "caption": caption})
             if missing:
                 print(f"  {missing} images listed in {json_file} were not found in {zip_file}")

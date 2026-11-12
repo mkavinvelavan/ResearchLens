@@ -1,0 +1,14 @@
+# V2 fusion - ViT (image) + SciBERT (caption) with a learned gate
+vision_model: google/vit-base-patch16-224-in21k
+text_model: allenai/scibert_scivocab_uncased
+model_tag: v2_figcls
+run_name: fusion_vit_scibert
+data_dir: /content/data/spiqa_figs
+epochs: 6
+lr: 3.0e-5
+batch_size: 24
+max_length: 128
+hidden: 512
+modality_dropout: 0.15
+early_stopping_patience: 2
+hub_repo: researchlens-fusion-figure-type
