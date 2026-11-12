@@ -3,20 +3,23 @@
 A multimodal research assistant for scientific papers (MSc Applied AI project). It reads text, figures, tables
 and formulas, answers questions with an **Evidence Trace**, compares two papers, and maps research gaps.
 
-The project has three tracks with matching weight: **NLP**, **Vision**, and **Multimodal Fusion**.
+NLP and Vision have **equal weight**: four fine-tuned models each, mirrored task for task, with the same
+evaluation template. Multimodal models are built on top of both. Full plan: [`docs/PLAN.md`](docs/PLAN.md).
 
-| Track | Model | Data | Main metric | Status |
-|---|---|---|---|---|
-| NLP | N1 SciBERT NER | SciERC | entity F1 | ✅ ready to train |
-| NLP | N2 SciBERT relation extraction | SciERC | relation F1 | next |
-| NLP | N3 SciBERT evidence reranker | QASPER | evidence F1, MRR | planned |
-| Vision | V1 ViT layout detector | DocLayNet | mAP | planned |
-| Vision | V2 ViT figure-type classifier (image) | SPIQA | accuracy, macro-F1 | ✅ ready to train |
-| NLP | V2-T SciBERT figure-type classifier (caption) | SPIQA | accuracy, macro-F1 | ✅ ready to train |
-| Fusion | V2-F ViT + SciBERT gated fusion (image + caption) | SPIQA | accuracy, macro-F1, McNemar | ✅ ready to train |
-| Vision | V3 ViT formula recognizer | im2latex-100k | exact match, edit distance | planned |
-| Fusion | F1 SigLIP cross-modal retriever | SPIQA | Recall@k | planned |
-| Fusion | F2 Qwen3-VL QLoRA (optional) | SPIQA | answer accuracy | stretch |
+| Role | NLP (SciBERT) | Vision (ViT) |
+|---|---|---|
+| Detect | N1 NER, SciERC ✅ | V1 layout detection, DocLayNet |
+| Classify | N2 caption → figure type, SPIQA ✅ | V2 image → figure type, SPIQA ✅ |
+| Structure | N3 relation extraction, SciERC | V3 table structure, PubTables-1M |
+| Read & find | N4 evidence reranker, QASPER | V4 formula → LaTeX, im2latex-100k |
+
+| Multimodal | Inputs | Status |
+|---|---|---|
+| M1 LayoutLMv3 page understanding | text + layout + page image | planned |
+| M2 ViT + SciBERT gated fusion | figure + caption | ✅ ready to train |
+| M3 SigLIP cross-modal retriever | question ↔ figure | planned |
+| M4 multimodal evidence reranker | question ↔ paragraphs + figures | planned |
+| M5 Qwen3-VL-4B QLoRA generator | text + figures + tables + formulas | planned |
 
 ## Workflow
 
