@@ -154,7 +154,7 @@ def main():
             img.save(dst, optimize=True)
             txt = parts.get("txt").decode("utf-8", "ignore") if parts.get("txt") else None
             kept[cls].append({"label": cls, "path": str(dst.relative_to(out)), "concept": concept,
-                              "paper_id": str(meta.get("PMID", meta.get("pmid", meta.get("article_id", "")))),
+                              "paper_id": str(meta.get("article_accession_id") or meta.get("PMID") or meta.get("pmid") or ""),
                               "caption": find_caption(meta, txt)})
         path.unlink(missing_ok=True)
         print(f"  read {n_seen} labelled figures | kept so far: { {c: len(kept[c]) for c in CLASSES} }", flush=True)
