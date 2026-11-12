@@ -58,7 +58,7 @@ class HistoryCallback(TrainerCallback):
             self.best_value, self.best_epoch = val, round(state.epoch or 0)
         parts = [f"Epoch {round(state.epoch or 0)}/{int(self.max_epochs)} done"]
         if self.last_train_loss is not None:
-            parts.append(f"train loss {self.last_train_loss:.4f}")
+            parts.append(f"running loss {self.last_train_loss:.4f}")
         if "eval_loss" in metrics:
             parts.append(f"val loss {metrics['eval_loss']:.4f}")
         show = ("loss", "f1", "macro_f1", "accuracy")
@@ -66,7 +66,7 @@ class HistoryCallback(TrainerCallback):
             for m in show:
                 v = metrics.get(f"eval_{split}_{m}")
                 if isinstance(v, (int, float)):
-                    parts.append(f"{split} {m} {v:.4f}")
+                    parts.append(f"{split}-set {m} {v:.4f}")
         if not any(k.startswith(("eval_train_", "eval_val_")) for k in metrics):
             for k, v in metrics.items():
                 if k.startswith("eval_") and k[5:] in show[1:] and isinstance(v, float):
