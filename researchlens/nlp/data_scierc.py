@@ -31,7 +31,8 @@ def download_scierc(data_dir: Path) -> Path:
     try:
         if not tgz.exists():
             print(f"Downloading SciERC from {SCIERC_URL} ...")
-            urllib.request.urlretrieve(SCIERC_URL, tgz)
+            with urllib.request.urlopen(SCIERC_URL, timeout=30) as r, open(tgz, "wb") as f:  # no endless hang
+                f.write(r.read())
         with tarfile.open(tgz) as tf:
             tf.extractall(data_dir)
         for cand in data_dir.rglob("train.json"):
