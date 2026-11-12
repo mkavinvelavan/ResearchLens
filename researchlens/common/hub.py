@@ -89,10 +89,11 @@ def _push_model(
     """Upload saved model files + metrics/history to <HF_USERNAME>/<repo_name>."""
     from huggingface_hub import HfApi
 
-    user = os.environ.get("HF_USERNAME")
     api = HfApi()
-    if not user:
+    try:  # the account that owns the token is always right; HF_USERNAME is only a fallback
         user = api.whoami()["name"]
+    except Exception:
+        user = os.environ.get("HF_USERNAME")
     repo_id = f"{user}/{repo_name}"
     api.create_repo(repo_id, private=private, exist_ok=True)
 

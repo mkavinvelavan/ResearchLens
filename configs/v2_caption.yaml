@@ -3,7 +3,7 @@ model_name: allenai/scibert_scivocab_uncased
 model_tag: v2_figcls
 run_name: scibert_caption
 data_dir: /content/data/spiqa_figs
-epochs: 5
+epochs: 4
 lr: 3.0e-5
 batch_size: 32
 max_length: 128
