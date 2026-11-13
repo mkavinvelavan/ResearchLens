@@ -19,7 +19,7 @@ evaluation template. Multimodal models are built on top of both. Full plan: [`do
 | M2 ViT + SciBERT gated fusion | figure + caption | ✅ ready to train |
 | M3 SigLIP cross-modal retriever | question ↔ figure | planned |
 | M4 multimodal evidence reranker | question ↔ paragraphs + figures | planned |
-| M5 Qwen3-VL-4B QLoRA generator | text + figures + tables + formulas | planned |
+| Answer generator: Gemini (free Google AI Studio API, not fine-tuned) | text + figures + tables + formulas | in app |
 
 ## Workflow
 

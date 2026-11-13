@@ -9,7 +9,6 @@ streamlit>=1.38
 pandas
 pillow
 torchvision
-bitsandbytes>=0.43   # 4-bit Qwen3-VL on 16 GB GPUs
 # optional, better parsing / OCR (heavy):
 # paddleocr paddlepaddle
 requests

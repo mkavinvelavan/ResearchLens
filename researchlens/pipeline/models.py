@@ -4,7 +4,7 @@ once per process, so the Streamlit app and the notebooks share the same code.
 Our fine-tuned models (Part 1)                          Pre-trained, used as-is
   ner        SciBERT NER, multi-domain                    text_embedder  BAAI/bge-small-en-v1.5 (384-d)
   relation   SciBERT relation extractor (SciERC)          siglip         google/siglip-base-patch16-224 (768-d, text<->image)
-  evidence   SciBERT evidence finder (QASPER)             vlm            Qwen/Qwen3-VL-4B-Instruct
+  evidence   SciBERT evidence finder (QASPER)             answers        Gemini via API (pipeline/answer.py)
   figtype    ViT figure classifier, multi-domain          ocr            PaddleOCR (optional)
   captype    SciBERT caption classifier
   formula    TrOCR formula reader
@@ -26,7 +26,6 @@ REPOS = {
 }
 TEXT_EMBEDDER = os.environ.get("RL_TEXT_EMBEDDER", "BAAI/bge-small-en-v1.5")
 SIGLIP = os.environ.get("RL_SIGLIP", "google/siglip-base-patch16-224")
-VLM = os.environ.get("RL_VLM", "Qwen/Qwen3-VL-4B-Instruct")
 
 
 class ModelBank:
@@ -121,28 +120,3 @@ class ModelBank:
         except Exception as e:  # optional dependency
             print(f"PaddleOCR not available ({type(e).__name__}); figure text comes from the PDF text layer only.")
             return None
-
-    @cached_property
-    def vlm(self):
-        import torch
-        from transformers import AutoModelForImageTextToText, AutoProcessor
-
-        proc = AutoProcessor.from_pretrained(VLM)
-        # bf16 only on GPUs that really have it (Ampere+); a T4 "supports" bf16 only by slow emulation -> fp16
-        native_bf16 = self.device == "cuda" and torch.cuda.get_device_capability(0)[0] >= 8
-        kw = {"dtype": torch.bfloat16 if native_bf16 else self.dtype}
-        if self.device == "cuda":
-            # 2 GPUs (Kaggle 2 x T4): Qwen3-VL gets GPU 1 alone, our small models stay on GPU 0
-            kw["device_map"] = {"": 1} if torch.cuda.device_count() > 1 else "auto"
-            # 16 GB GPUs: 4-bit weights (~3 GB instead of ~9 GB) leave room for long multimodal prompts
-            small_gpu = torch.cuda.get_device_properties(0).total_memory < 20e9
-            if os.environ.get("RL_VLM_4BIT", "1" if small_gpu else "0") == "1":
-                from transformers import BitsAndBytesConfig
-
-                kw["quantization_config"] = BitsAndBytesConfig(
-                    load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True,
-                    bnb_4bit_compute_dtype=torch.bfloat16 if native_bf16 else torch.float16)
-        m = AutoModelForImageTextToText.from_pretrained(VLM, **kw).eval()
-        if self.device != "cuda":
-            m.to(self.device)
-        return proc, m

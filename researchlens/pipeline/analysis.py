@@ -1,4 +1,4 @@
-"""Part 3 features built on retrieval + Qwen3-VL: overview, figure/formula explanation, two-paper comparison,
+"""Part 3 features built on retrieval + Gemini: overview, figure/formula explanation, two-paper comparison,
 Research Gap Map and Idea Generator. Every output cites evidence ids, so each has an Evidence Trace.
 """
 from __future__ import annotations

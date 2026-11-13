@@ -1,4 +1,4 @@
-"""Step 5 of Part 2: Qwen3-VL reads the retrieved evidence (text AND figure/table/equation images) and answers,
+"""Step 5 of Part 2: Gemini (Google AI Studio API, free tier) reads the retrieved evidence (text AND figure/table/equation images) and answers,
 citing evidence ids. The Evidence Trace maps every cited id back to paper, page, section, block and why it was retrieved.
 """
 from __future__ import annotations
@@ -47,34 +47,14 @@ def build_messages(evidence: list[dict], instruction: str, max_images: int = 2) 
             {"role": "user", "content": content}]
 
 
-GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
-OPENROUTER_URL = "https://openrouter.ai/api/v1"
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"   # Gemini's OpenAI-compatible endpoint
 GEMINI_MODELS = os.environ.get("GEMINI_MODELS", "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite,"
                                "gemini-3.1-flash-lite")
-OPENROUTER_MODELS = os.environ.get("OPENROUTER_MODELS", "google/gemma-4-31b-it:free,nvidia/nemotron-3.5-super-vl:free,"
-                                   "google/gemma-4-26b-a4b-it:free")
-LAST_MODEL = {"name": None}          # which provider/model produced the last answer (shown in the app)
+LAST_MODEL = {"name": None}          # which Gemini model produced the last answer (shown in the app)
 
 
-def api_providers() -> list[tuple[str, str, str]]:
-    """(base_url, key, model) to try in order. Free tiers are often busy, so the app falls back to the next one.
-    Secrets: GEMINI_API_KEY (Google AI Studio, free) and/or OPENROUTER_API_KEY (free models; QWEN_API_KEY also accepted).
-    A fully custom endpoint: VLM_API_URL + VLM_API_KEY + VLM_API_MODEL (e.g. a paid Qwen3-VL)."""
-    out = []
-    if os.environ.get("VLM_API_KEY") and os.environ.get("VLM_API_URL"):
-        out.append((os.environ["VLM_API_URL"], os.environ["VLM_API_KEY"], os.environ.get("VLM_API_MODEL", "")))
-    if os.environ.get("GEMINI_API_KEY"):
-        out += [(GEMINI_URL, os.environ["GEMINI_API_KEY"], m.strip()) for m in GEMINI_MODELS.split(",") if m.strip()]
-    key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("QWEN_API_KEY")
-    if key:
-        out += [(OPENROUTER_URL, key, m.strip()) for m in OPENROUTER_MODELS.split(",") if m.strip()]
-    return out
-
-
-def use_api() -> bool:
-    """RL_VLM_MODE=api|local. Default: api when any API key is set (deployed website), otherwise local Qwen3-VL on GPU."""
-    mode = os.environ.get("RL_VLM_MODE", "auto")
-    return mode == "api" or (mode == "auto" and bool(api_providers()))
+def gemini_models() -> list[str]:
+    return [m.strip() for m in GEMINI_MODELS.split(",") if m.strip()]
 
 
 def _to_openai(messages: list[dict]) -> list[dict]:
@@ -101,18 +81,18 @@ class _Retry(Exception):
     pass
 
 
-def _call(url, key, model, body, on_text):
+def _call(key, model, body, on_text):
     import requests
 
     try:
-        r = requests.post(f"{url.rstrip('/')}/chat/completions", json={**body, "model": model}, stream=on_text is not None,
-                          timeout=180, headers={"Authorization": f"Bearer {key}", "X-Title": "ResearchLens"})
+        r = requests.post(f"{GEMINI_URL}/chat/completions", json={**body, "model": model}, stream=on_text is not None,
+                          timeout=180, headers={"Authorization": f"Bearer {key}"})
     except requests.RequestException as e:
         raise _Retry(f"{model}: {e}")
-    if r.status_code in (404, 408, 429) or r.status_code >= 500:
+    if r.status_code in (404, 408, 429) or r.status_code >= 500:     # removed / busy / overloaded -> next model
         raise _Retry(f"{model}: HTTP {r.status_code} {r.text[:200]}")
     if r.status_code != 200:
-        raise RuntimeError(f"Vision-language API error {r.status_code} ({model}): {r.text[:400]}")
+        raise RuntimeError(f"Gemini API error {r.status_code} ({model}): {r.text[:400]}")
     if on_text is None:
         return r.json()["choices"][0]["message"]["content"].strip()
     text = ""
@@ -135,74 +115,27 @@ def _call(url, key, model, body, on_text):
     return text.strip()
 
 
-def generate_api(messages: list[dict], max_new_tokens: int = 900, temperature: float = 0.0, on_text=None) -> str:
-    """Any OpenAI-compatible endpoint (Google AI Studio Gemini, OpenRouter, a paid Qwen3-VL ...). Tries each
-    provider/model in api_providers() order; a busy (429), removed (404) or failing (5xx) one moves on to the next."""
-    providers = api_providers()
-    if not providers:
-        raise RuntimeError("No API key set: add GEMINI_API_KEY and/or OPENROUTER_API_KEY as a secret.")
+def generate(bank, messages: list[dict], max_new_tokens: int = 900, temperature: float = 0.0, on_text=None) -> str:
+    """Gemini reads the evidence (text + images) and answers. on_text(partial_text) is called while tokens arrive.
+    Free models are sometimes busy, so each model in GEMINI_MODELS is tried in turn. `bank` is unused (kept so all
+    callers stay the same). Needs the GEMINI_API_KEY secret (Google AI Studio)."""
+    key = os.environ.get("GEMINI_API_KEY")
+    if not key:
+        raise RuntimeError("GEMINI_API_KEY is not set: create a free key at https://aistudio.google.com/apikey and "
+                           "add it as a secret.")
     body = {"messages": _to_openai(messages), "max_tokens": max_new_tokens, "temperature": temperature,
             "stream": on_text is not None}
     errors = []
-    for url, key, model in providers:
+    for model in gemini_models():
         try:
-            text = _call(url, key, model, body, on_text)
+            text = _call(key, model, body, on_text)
             LAST_MODEL["name"] = model
-            print(f"[API] answered by {model}", flush=True)
+            print(f"[Gemini] answered by {model}", flush=True)
             return text
         except _Retry as e:
             errors.append(str(e))
-            print(f"[API] {e} -> trying next", flush=True)
-    raise RuntimeError("All free vision-language APIs are busy or unavailable right now. Try again in a minute.\n"
-                       + "\n".join(errors))
-
-
-def generate(bank, messages: list[dict], max_new_tokens: int = 900, temperature: float = 0.0, on_text=None) -> str:
-    """on_text(partial_text) is called while tokens arrive (the app shows the answer as it is written)."""
-    if use_api():
-        return generate_api(messages, max_new_tokens, temperature, on_text)
-    import threading
-
-    import torch
-    from transformers import TextIteratorStreamer
-
-    proc, model = bank.vlm
-    inputs = proc.apply_chat_template(messages, tokenize=True, add_generation_prompt=True, return_dict=True,
-                                      return_tensors="pt").to(model.device)
-    print(f"[Qwen3-VL] prompt tokens: {inputs['input_ids'].shape[1]}", flush=True)
-    kw = {"max_new_tokens": max_new_tokens, "do_sample": temperature > 0, "repetition_penalty": 1.05}
-    if temperature > 0:
-        kw.update(temperature=temperature, top_p=0.9)
-    if on_text is None:
-        with torch.no_grad():
-            out = model.generate(**inputs, **kw)
-        text = proc.batch_decode(out[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0].strip()
-    else:
-        streamer = TextIteratorStreamer(proc.tokenizer, skip_prompt=True, skip_special_tokens=True)
-        err = []
-        def run():
-            try:
-                with torch.no_grad():
-                    model.generate(**inputs, streamer=streamer, **kw)
-            except Exception as e:   # surface errors (e.g. GPU out of memory) instead of hanging the app
-                err.append(e)
-                streamer.end()
-        th = threading.Thread(target=run, daemon=True)
-        th.start()
-        text = ""
-        for piece in streamer:
-            text += piece
-            on_text(text)
-        th.join()
-        if err:
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            raise err[0]
-        text = text.strip()
-        out = None
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    return text
+            print(f"[Gemini] {e} -> trying next", flush=True)
+    raise RuntimeError("All free Gemini models are busy right now. Please try again in a minute.\n" + "\n".join(errors))
 
 
 def evidence_trace(answer: str, evidence: list[dict]) -> list[dict]:

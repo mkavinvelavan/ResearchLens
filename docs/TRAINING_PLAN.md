@@ -31,10 +31,10 @@ One-time SPIQA download + preparation: ~0.5–1 h (cached on Drive as a zip afte
 |---|---|
 | PDF parsing / layout / tables | our pdfplumber-based parser (MinerU dropped: too heavy to deploy) |
 | OCR inside figures | PaddleOCR |
-| Relations between entities | Qwen3-VL prompted with SciBERT entities |
+| Relations between entities | our SciBERT relation extractor (SciERC) |
 | Text embeddings for Qdrant | pre-trained sentence-embedding model |
 | Image embeddings for Qdrant | SigLIP (zero-shot) |
-| Answers, overview, comparison, Gap Map, figure explanations | Qwen3-VL |
+| Answers, overview, comparison, Gap Map, figure explanations | Gemini (Google AI Studio API, free tier) |
 
 ## Evaluation without training (system level)
 

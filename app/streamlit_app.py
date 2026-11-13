@@ -2,8 +2,7 @@
 
     streamlit run app/streamlit_app.py
 
-Answers come from Qwen3-VL on a GPU (local mode) or, when GEMINI_API_KEY / OPENROUTER_API_KEY is set, from free
-vision-language APIs with automatic fallback (api mode: runs on a free CPU Space; see pipeline/answer.py). HF_TOKEN (to load our private models) and optionally QDRANT_URL / QDRANT_API_KEY
+Answers come from Gemini (free Google AI Studio API, GEMINI_API_KEY secret), so the app runs on a CPU. HF_TOKEN (to load our private models) and optionally QDRANT_URL / QDRANT_API_KEY
 come from environment variables or Streamlit secrets.
 """
 from __future__ import annotations
@@ -17,8 +16,7 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-for k in ("HF_TOKEN", "QDRANT_URL", "QDRANT_API_KEY", "RL_HF_USER", "QWEN_API_KEY", "GEMINI_API_KEY", "OPENROUTER_API_KEY", "VLM_API_URL", "VLM_API_KEY", "VLM_API_MODEL",
-          "GEMINI_MODELS", "OPENROUTER_MODELS", "RL_VLM_MODE"):
+for k in ("HF_TOKEN", "QDRANT_URL", "QDRANT_API_KEY", "RL_HF_USER", "GEMINI_API_KEY", "GEMINI_MODELS"):
     try:
         if k in st.secrets and not os.environ.get(k):
             os.environ[k] = st.secrets[k]
@@ -174,7 +172,7 @@ def page_explain():
                 st.caption(f"Read by our TrOCR model ({b.get('latex_lines', 1)} line(s)).")
             else:
                 st.caption("Our TrOCR model could not read this equation reliably, so its output is hidden; "
-                           "Qwen3-VL reads the equation directly from the image instead.")
+                           "Gemini reads the equation directly from the image instead.")
         else:
             st.caption(b.get("caption", ""))
             if b.get("figure_type"):
