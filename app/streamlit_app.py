@@ -99,10 +99,13 @@ def _demo_index() -> list[dict]:
 def demo_index() -> list[dict]:
     """Demo papers prepared by notebook K7 (demo_papers/index.json in the results dataset)."""
     try:
-        return _demo_index()
+        demos = _demo_index()
     except Exception as e:
         print(f"[demo] no demo papers listed ({type(e).__name__}: {e})", flush=True)
         return []
+    # hide demos whose paper is in a training set (the SciBERT paper is in SPIQA train); comma-separated, env-overridable
+    hidden = [w.strip().lower() for w in os.environ.get("RL_HIDE_DEMOS", "scibert").split(",") if w.strip()]
+    return [d for d in demos if not any(w in str(d.get("title", "")).lower() for w in hidden)]
 
 
 def load_demo(paper_id: str, log=print) -> dict:
@@ -123,7 +126,7 @@ def page_upload():
     demos = demo_index()
     if demos:
         st.subheader("Try a demo paper (instant)")
-        st.caption("Ordinary published papers, not part of our text-model training data. We ran the same pipeline on "
+        st.caption("Ordinary published papers, not part of any of our training or evaluation data. We ran the same pipeline on "
                    "them once in advance on a GPU and saved the results (entities, relations, figure types, formulas, "
                    "search vectors, overview). Opening one just loads those saved results, so it takes seconds. Your "
                    "own PDFs go through every model live on this small CPU server, which takes a few minutes. "
