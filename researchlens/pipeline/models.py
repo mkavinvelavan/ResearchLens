@@ -131,9 +131,8 @@ class ModelBank:
         kw = {"dtype": torch.bfloat16 if self.device == "cuda" and torch.cuda.is_bf16_supported() else self.dtype}
         if self.device == "cuda":
             # 2 GPUs (Kaggle 2 x T4): Qwen3-VL gets GPU 1 to itself, our small models stay on GPU 0 -> no memory fights
-            kw["device_map"] = "auto"
-            if torch.cuda.device_count() > 1:   # mostly on GPU 1, can spill to GPU 0 (our small models use ~2.5 GB there)
-                kw["max_memory"] = {0: "7GiB", 1: "11GiB"}
+            # 2 GPUs (Kaggle 2 x T4): Qwen3-VL (~9 GB) gets GPU 1 alone, our small models stay on GPU 0
+            kw["device_map"] = {"": 1} if torch.cuda.device_count() > 1 else "auto"
         m = AutoModelForImageTextToText.from_pretrained(VLM, **kw).eval()
         if self.device != "cuda":
             m.to(self.device)

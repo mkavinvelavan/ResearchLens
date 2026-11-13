@@ -54,7 +54,7 @@ def by_labels(qc, paper_ids, labels):
     return [p.payload for p in pts]
 
 
-def retrieve(bank, question: str, paper_ids: list[str], qc=None, k_candidates: int = 24, k_text: int = 6,
+def retrieve(bank, question: str, paper_ids: list[str], qc=None, k_candidates: int = 24, k_text: int = 5,
              k_image: int = 2, rerank: bool = True, kinds: list[str] | None = None) -> list[dict]:
     qc = qc or client()
     qv = embed_texts(bank, [question], query=True)[0]
@@ -106,7 +106,7 @@ def retrieve(bank, question: str, paper_ids: list[str], qc=None, k_candidates: i
     return keep
 
 
-def describe(item: dict, max_chars: int = 900) -> str:
+def describe(item: dict, max_chars: int = 700) -> str:
     """How one evidence item is shown to the language model."""
     loc = f"[{item['eid']}] {item.get('paper_title', '')[:50]} | p.{item['page']} | {item.get('section') or '-'}"
     k = item["kind"]
@@ -114,8 +114,8 @@ def describe(item: dict, max_chars: int = 900) -> str:
         body = f"{item.get('label') or k}: {item.get('caption') or ''}"
         if item.get("table_text"):
             body += ("\nTABLE CONTENT (rows, cells separated by |; section headers like '(a) ...' / '(b) ...' apply to "
-                     f"the rows below them):\n{item['table_text'][:2500]}")
-            max_chars = max(max_chars, 3200)
+                     f"the rows below them):\n{item['table_text'][:1800]}")
+            max_chars = max(max_chars, 2300)
         else:
             extra = " ".join(x for x in (item.get("text"), item.get("ocr_text")) if x)
             if extra:
