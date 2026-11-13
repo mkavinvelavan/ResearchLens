@@ -13,7 +13,7 @@ from researchlens.pipeline.index import client, delete_paper, index_paper
 from researchlens.pipeline.parse_pdf import parse, paper_id_of
 
 
-def process_paper(pdf, work_dir, bank, qc=None, backend: str = "auto", log=print) -> dict:
+def process_paper(pdf, work_dir, bank, qc=None, backend: str = "pdfplumber", log=print) -> dict:
     pdf, work_dir = Path(pdf), Path(work_dir)
     out = work_dir / paper_id_of(pdf)
     qc = qc or client()
@@ -37,9 +37,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("pdfs", nargs="+")
     ap.add_argument("--work_dir", default="rl_papers")
-    ap.add_argument("--backend", default="auto")
     a = ap.parse_args()
     bank, qc = ModelBank(), client()
     for p in a.pdfs:
-        d = process_paper(p, a.work_dir, bank, qc, a.backend)
+        d = process_paper(p, a.work_dir, bank, qc)
         print(d["paper_id"], d.get("title"))

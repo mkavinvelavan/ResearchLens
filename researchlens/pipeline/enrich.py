@@ -4,7 +4,7 @@
               -> relation extractor on every entity pair in a sentence (USED-FOR, EVALUATE-FOR, ...)
   figures/tables -> figure type = average of ViT (image) and SciBERT (caption) probabilities
                     (the late fusion that scored best in our tests: 93.6% accuracy) + text inside the figure
-  equations   -> TrOCR LaTeX (+ MinerU's LaTeX when available) + the surrounding explanation
+  equations   -> TrOCR LaTeX (checked against the PDF text) + the surrounding explanation
   links       -> "Figure 2 / Table 1 / Eq. (3)" mentions in paragraphs <-> the figure/table/equation blocks
 """
 from __future__ import annotations

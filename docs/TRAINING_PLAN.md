@@ -29,7 +29,7 @@ One-time SPIQA download + preparation: ~0.5–1 h (cached on Drive as a zip afte
 
 | Component | Model |
 |---|---|
-| PDF parsing / layout / tables | MinerU |
+| PDF parsing / layout / tables | our pdfplumber-based parser (MinerU dropped: too heavy to deploy) |
 | OCR inside figures | PaddleOCR |
 | Relations between entities | Qwen3-VL prompted with SciBERT entities |
 | Text embeddings for Qdrant | pre-trained sentence-embedding model |

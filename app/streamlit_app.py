@@ -85,8 +85,6 @@ def page_upload():
     st.write("Upload one paper for **Single Paper Analysis** or two for **Two-Paper Comparison**. Each paper is split "
              "into text, figures, tables and formulas, processed by our fine-tuned models, and stored in Qdrant.")
     files = st.file_uploader("PDF files", type=["pdf"], accept_multiple_files=True)
-    backend = st.radio("PDF parser", ["auto", "mineru", "pdfplumber"], horizontal=True,
-                       help="auto = MinerU if installed, else the light pdfplumber parser")
     if files and st.button("Process", type="primary"):
         from researchlens.pipeline.run import process_paper
 
@@ -95,7 +93,7 @@ def page_upload():
             path = WORK / f.name
             path.write_bytes(f.getbuffer())
             with st.status(f"Processing {f.name}", expanded=True) as s:
-                doc = process_paper(path, WORK, bank, qc, backend=backend, log=s.write)
+                doc = process_paper(path, WORK, bank, qc, log=s.write)
                 ss.docs[doc["paper_id"]] = doc
                 s.update(label=f"✅ {doc.get('title', f.name)[:80]}", state="complete")
     for pid, d in ss.docs.items():

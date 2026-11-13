@@ -1,11 +1,9 @@
 """Step 1 of Part 2: split a paper PDF into typed blocks with page numbers, sections and image crops.
 
-Backends
-  mineru      MinerU 2.x (`mineru -p paper.pdf -o out -b pipeline`): layout detection + reading order + formula LaTeX.
-              Best quality; needs the `mineru` package (GPU recommended).
-  pdfplumber  Light fallback (CPU, no models): text lines -> paragraphs/headings, captions by "Figure n / Table n",
-              figure/table regions = the space next to the caption, equations = lines ending in "(n)".
-  auto        MinerU if installed, else pdfplumber.
+Our own rule-based parser on top of pdfplumber (CPU only, no models, instant - so it also runs on the website):
+  text lines -> columns (gutter split) -> paragraphs / headings, captions "Figure n: / Table n:", figure/table regions = the
+  free space next to the caption, table cells -> rows of text, equations = lines with a set-off "(n)" number, page crops.
+  (A layout-model parser such as MinerU was considered and left out: several GB of models, slow on CPU, hard to deploy.)
 
 Output: <out_dir>/doc.json
   {paper_id, title, n_pages, backend, blocks: [
@@ -42,56 +40,7 @@ def paper_id_of(pdf: Path) -> str:
     return hashlib.md5(pdf.read_bytes()).hexdigest()[:12]
 
 
-# =========================================================================== MinerU
-def parse_mineru(pdf: Path, out: Path) -> dict:
-    raw = out / "mineru"
-    subprocess.run(["mineru", "-p", str(pdf), "-o", str(raw), "-b", "pipeline"], check=True)
-    cl = next(raw.rglob("*content_list.json"))
-    base = cl.parent
-    items = json.loads(cl.read_text(encoding="utf-8"))
-    blocks = []
-    for it in items:
-        t = it.get("type")
-        page = int(it.get("page_idx", 0)) + 1
-        bbox = it.get("bbox")
-        b = {"page": page, "bbox": bbox}
-        if t == "text":
-            txt = (it.get("text") or "").strip()
-            if not txt:
-                continue
-            b.update(kind="heading" if it.get("text_level") else "paragraph", text=txt)
-        elif t in ("image", "table"):
-            cap = " ".join(it.get(f"{'image' if t == 'image' else 'table'}_caption") or []).strip()
-            b.update(kind="figure" if t == "image" else "table", caption=cap,
-                     text=(it.get("table_body") or "") if t == "table" else "")
-            if t == "table":
-                b["table_text"] = html_table_text(it.get("table_body") or "")
-            if it.get("img_path"):
-                src = base / it["img_path"]
-                if src.exists():
-                    dst = out / "images" / f"{t}_{len(blocks)}{src.suffix}"
-                    dst.parent.mkdir(exist_ok=True)
-                    shutil.copy(src, dst)
-                    b["image"] = str(dst.relative_to(out))
-        elif t == "equation":
-            latex = (it.get("text") or "").strip().strip("$").strip()
-            b.update(kind="equation", text=latex, latex=latex)
-            if it.get("img_path") and (base / it["img_path"]).exists():
-                src = base / it["img_path"]
-                dst = out / "images" / f"eq_{len(blocks)}{src.suffix}"
-                dst.parent.mkdir(exist_ok=True)
-                shutil.copy(src, dst)
-                b["image"] = str(dst.relative_to(out))
-        else:
-            continue
-        blocks.append(b)
-    import pypdfium2 as pdfium
-
-    n_pages = len(pdfium.PdfDocument(str(pdf)))
-    return {"backend": "mineru", "n_pages": n_pages, "blocks": blocks}
-
-
-# =========================================================================== pdfplumber fallback
+# =========================================================================== pdfplumber parser
 def _lines(page) -> list[dict]:
     """Words -> rows (same height) -> split each row at the column gutter -> lines with a column id.
 
@@ -212,16 +161,6 @@ def table_grid(page, region) -> str:
         cells.append(" ".join(w["text"] for w in cell))
         lines.append(" | ".join(cells))
     return "\n".join(lines)[:4000]
-
-
-def html_table_text(html: str) -> str:
-    """MinerU gives tables as HTML -> same 'cell | cell' rows."""
-    rows = re.findall(r"<tr[^>]*>(.*?)</tr>", html or "", re.S | re.I)
-    out = []
-    for r in rows:
-        cells = [re.sub(r"<[^>]+>", "", c).strip() for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", r, re.S | re.I)]
-        out.append(" | ".join(cells))
-    return "\n".join(out)[:4000]
 
 
 def _is_math_line(text: str) -> bool:
@@ -414,12 +353,10 @@ def finalize(doc: dict, pdf: Path) -> dict:
     return {"paper_id": paper_id_of(pdf), "file": pdf.name, "title": title, **doc}
 
 
-def parse(pdf: str | Path, out_dir: str | Path, backend: str = "auto") -> dict:
+def parse(pdf: str | Path, out_dir: str | Path, backend: str = "pdfplumber") -> dict:
     pdf, out = Path(pdf), Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    if backend == "auto":
-        backend = "mineru" if shutil.which("mineru") else "pdfplumber"
-    doc = parse_mineru(pdf, out) if backend == "mineru" else parse_pdfplumber(pdf, out)
+    doc = parse_pdfplumber(pdf, out)
     doc = finalize(doc, pdf)
     (out / "doc.json").write_text(json.dumps(doc, indent=1, ensure_ascii=False), encoding="utf-8")
     counts = Counter(b["kind"] for b in doc["blocks"])
@@ -433,6 +370,5 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("pdf")
     ap.add_argument("--out_dir", required=True)
-    ap.add_argument("--backend", default="auto", choices=["auto", "mineru", "pdfplumber"])
     a = ap.parse_args()
-    parse(a.pdf, a.out_dir, a.backend)
+    parse(a.pdf, a.out_dir)
