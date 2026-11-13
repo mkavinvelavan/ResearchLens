@@ -58,7 +58,9 @@ class ModelBank:
         # so only the search models (bge, SigLIP, evidence finder) stay in memory. On by default without a GPU.
         self.low_memory = os.environ.get("RL_LOW_MEMORY", "0" if self.device == "cuda" else "1") == "1"
         if self.device == "cpu":
-            torch.set_num_threads(cpu_limit())
+            # free hosting gives ~2 real cores even when the container reports 16; more threads only slow PyTorch down
+            torch.set_num_threads(min(cpu_limit(), 2) if self.low_memory and "RL_THREADS" not in os.environ
+                                  else cpu_limit())
             print(f"[models] CPU mode: {torch.get_num_threads()} threads, low_memory={self.low_memory}", flush=True)
 
     def release(self, *names: str):
