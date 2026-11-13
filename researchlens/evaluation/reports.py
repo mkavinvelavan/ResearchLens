@@ -202,6 +202,7 @@ def mcnemar(a_correct: np.ndarray, b_correct: np.ndarray) -> dict:
     """Exact McNemar test on paired predictions: is model B significantly different from model A?"""
     from scipy.stats import binomtest
 
+    a_correct, b_correct = np.asarray(a_correct, dtype=bool), np.asarray(b_correct, dtype=bool)
     b01 = int(np.sum(a_correct & ~b_correct))   # A right, B wrong
     b10 = int(np.sum(~a_correct & b_correct))   # A wrong, B right
     n = b01 + b10
@@ -286,6 +287,8 @@ def figcls_report(results_root, model_tag="v2_figcls", main_run="vit_base") -> p
                     continue
                 ca, cb = _correct_by_path(sa), _correct_by_path(sb)
                 common = [k for k in cb if k in ca]
+                if not common:   # different test sets (e.g. the multi-domain ViT) -> no paired test
+                    continue
                 res = mcnemar(np.array([ca[k] for k in common]), np.array([cb[k] for k in common]))
                 sig_rows.append({"model_A": other, "model_B": best, "seed": sb["metrics"].get("seed"), "n": len(common), **res})
         pd.DataFrame(sig_rows).to_csv(out / "significance_mcnemar.csv", index=False)
