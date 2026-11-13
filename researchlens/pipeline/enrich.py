@@ -201,6 +201,17 @@ def latex_is_garbage(lx: str) -> bool:
     return (n / len(toks) > 0.45 and len(toks) > 8) or sum(t in ("\\", "\\!", "\\,", "\\;") for t in toks) / len(toks) > 0.4
 
 
+def latex_agrees_with_pdf(latex: str, pdf_text: str):
+    """Share of the multi-letter names in the PDF's own equation text (MSA, MLP, LN, softmax ...) that the LaTeX also
+    contains. None when the PDF text has too few names to judge. Low -> TrOCR misread the image."""
+    names = {w.lower() for w in re.findall(r"[A-Za-z]{2,}", pdf_text)} - {"cid", "where", "and", "the", "of", "for"}
+    if len(names) < 2:
+        return None
+    lx = re.sub(r"\\(mathrm|mathbf|boldsymbol|text|operatorname|mathcal|bf|cal|rm|left|right|begin|end|array)", " ", latex)
+    lx = re.sub(r"[^A-Za-z]", "", lx).lower()
+    return round(sum(n in lx for n in names) / len(names), 2)
+
+
 def formulas(bank, out_dir: Path, eqs: list[dict], batch_size: int = 8) -> None:
     import torch
     from PIL import Image
@@ -219,7 +230,9 @@ def formulas(bank, out_dir: Path, eqs: list[dict], batch_size: int = 8) -> None:
         good = [o for o in outs if not latex_is_garbage(o)]
         b["latex_lines"] = len(lines)
         b["latex_trocr"] = " \\\\ ".join(good)
-        b["latex_ok"] = bool(good) and len(good) >= max(1, len(outs) // 2)
+        agree = latex_agrees_with_pdf(b["latex_trocr"], b.get("text") or "")
+        b["latex_agreement"] = agree
+        b["latex_ok"] = bool(good) and len(good) >= max(1, len(outs) // 2) and (agree is None or agree >= 0.5)
         if not b.get("latex") and b["latex_ok"]:
             b["latex"] = b["latex_trocr"]
     for b in eqs:   # variables = single letters / greek commands appearing in the LaTeX

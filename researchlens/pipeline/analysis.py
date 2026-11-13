@@ -85,7 +85,7 @@ def explain_item(bank, doc: dict, label: str, qc=None, on_text=None) -> dict:
         return {"answer": f"{label} was not found in this paper.", "trace": [], "evidence": []}
     t = target[0]
     kind = t["kind"]
-    q = (f"{label} {t.get('caption') or ''} {t.get('latex') or ''}").strip()
+    q = (f"{label} {(t.get('caption') or '')[:200]} {(t.get('context') or '')[:200] if kind == 'equation' else ''}").strip()
     ctx = retrieve(bank, q, [pid], qc=qc, k_text=4, k_image=0, kinds=["paragraph"])
     if kind == "equation":
         res = retrieve(bank, f"results of the method using {label} " + " ".join(t.get("variables") or []), [pid],

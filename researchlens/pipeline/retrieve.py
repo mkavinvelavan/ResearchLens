@@ -36,7 +36,7 @@ def evidence_scores(bank, question: str, texts: list[str], batch_size: int = 32)
     tok, m = bank.evidence
     out = []
     for i in range(0, len(texts), batch_size):
-        enc = tok([question] * len(texts[i:i + batch_size]), texts[i:i + batch_size], truncation="only_second",
+        enc = tok([question[:300]] * len(texts[i:i + batch_size]), texts[i:i + batch_size], truncation="longest_first",
                   max_length=256, padding=True, return_tensors="pt").to(bank.device)
         with torch.no_grad():
             out += torch.softmax(m(**enc).logits.float(), -1)[:, 1].cpu().tolist()
