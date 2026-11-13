@@ -55,13 +55,13 @@ def entity_summary(doc: dict, top: int = 8) -> dict:
 # ------------------------------------------------------------------ single paper
 def overview(bank, doc: dict, qc=None) -> dict:
     pid = doc["paper_id"]
-    lists = [retrieve(bank, q, [pid], qc=qc, k_text=3, k_image=0) for q in OVERVIEW_ASPECTS.values()]
+    lists = [retrieve(bank, q, [pid], qc=qc, k_text=2, k_image=0) for q in OVERVIEW_ASPECTS.values()]
     lists.append(retrieve(bank, "main results table or results figure", [pid], qc=qc, k_text=1, k_image=1,
                           kinds=["figure", "table"]))
     eqs = [dict(b, paper_id=pid, block_id=b["id"], paper_title=doc.get("title", ""), via="equation in paper",
                 image=str(Path(doc.get("out_dir", ".")) / b["image"]) if b.get("image") else None)
            for b in doc["blocks"] if b["kind"] == "equation"][:3]
-    ev = _merge(lists + [eqs], 22)
+    ev = _merge(lists + [eqs], 15)
     ents = entity_summary(doc)
     instr = (
         f"Write a structured overview of the paper \"{doc.get('title', '')}\" with these markdown sections: "
@@ -119,7 +119,7 @@ def compare(bank, doc_a: dict, doc_b: dict, qc=None) -> dict:
           "evaluation metrics and experimental setup", "main results", "limitations and future work"]
     lists = [retrieve(bank, q, ids, qc=qc, k_text=2, k_image=0) for q in qs]
     lists.append(retrieve(bank, "main results table or figure", ids, qc=qc, k_text=1, k_image=1, kinds=["figure", "table"]))
-    ev = _merge(lists, 28)
+    ev = _merge(lists, 18)
     overlap = shared_entities(doc_a, doc_b)
     instr = (
         f"Compare Paper A \"{doc_a.get('title', '')}\" and Paper B \"{doc_b.get('title', '')}\". "
@@ -127,7 +127,7 @@ def compare(bank, doc_a: dict, doc_b: dict, qc=None) -> dict:
         "Paper B, with citations [E#] in the cells. Then write 'Key similarities' and 'Key differences' as bullet "
         "points, and compare their figures/tables where images are provided.\n"
         f"Entity overlap found by our NER model: {json.dumps(overlap)}")
-    text = generate(bank, build_messages(ev, instr, max_images=4), max_new_tokens=1400)
+    text = generate(bank, build_messages(ev, instr, max_images=2), max_new_tokens=1400)
     return {"comparison": text, "trace": evidence_trace(text, ev), "evidence": ev, "entity_overlap": overlap}
 
 
@@ -138,7 +138,7 @@ def gap_map(bank, doc_a: dict, doc_b: dict, qc=None) -> dict:
     ids = [doc_a["paper_id"], doc_b["paper_id"]]
     qs = ["limitations and weaknesses", "future work", "datasets and their size or domain",
           "evaluation metrics and baselines", "assumptions of the method", "results where performance is low"]
-    ev = _merge([retrieve(bank, q, ids, qc=qc, k_text=2, k_image=0) for q in qs], 24)
+    ev = _merge([retrieve(bank, q, ids, qc=qc, k_text=2, k_image=0) for q in qs], 16)
     instr = (
         "Identify research gaps across the two papers. Each gap must be supported by the evidence. Return ONLY JSON: "
         '{"gaps": [{"title": "...", "type": one of ' + json.dumps(GAP_TYPES) + ', "papers": ["A"|"B"|"both"], '

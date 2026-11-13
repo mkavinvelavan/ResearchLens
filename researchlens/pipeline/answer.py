@@ -19,7 +19,7 @@ SYSTEM = (
 CITE_RE = re.compile(r"\[(E\d+)\]")
 
 
-def _image(path: str | None, max_side: int = 896):
+def _image(path: str | None, max_side: int = 640):
     from PIL import Image
 
     if not path or not Path(path).exists():
@@ -29,7 +29,7 @@ def _image(path: str | None, max_side: int = 896):
     return img
 
 
-def build_messages(evidence: list[dict], instruction: str, max_images: int = 4) -> list[dict]:
+def build_messages(evidence: list[dict], instruction: str, max_images: int = 3) -> list[dict]:
     content, n_img = [], 0
     for it in evidence:
         img = _image(it.get("image")) if it["kind"] in ("figure", "table", "equation") and n_img < max_images else None
@@ -54,7 +54,11 @@ def generate(bank, messages: list[dict], max_new_tokens: int = 700, temperature:
         kw.update(temperature=temperature, top_p=0.9)
     with torch.no_grad():
         out = model.generate(**inputs, **kw)
-    return proc.batch_decode(out[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0].strip()
+    text = proc.batch_decode(out[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0].strip()
+    del inputs, out
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return text
 
 
 def evidence_trace(answer: str, evidence: list[dict]) -> list[dict]:

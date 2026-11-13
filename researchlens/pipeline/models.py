@@ -128,9 +128,9 @@ class ModelBank:
         from transformers import AutoModelForImageTextToText, AutoProcessor
 
         proc = AutoProcessor.from_pretrained(VLM)
-        kw = {"torch_dtype": torch.bfloat16 if self.device == "cuda" and torch.cuda.is_bf16_supported() else self.dtype}
+        kw = {"dtype": torch.bfloat16 if self.device == "cuda" and torch.cuda.is_bf16_supported() else self.dtype}
         if self.device == "cuda":
-            kw["device_map"] = "auto"
+            kw["device_map"] = "auto"   # spreads the 4B model over every visible GPU (e.g. Kaggle's 2 x T4)
         m = AutoModelForImageTextToText.from_pretrained(VLM, **kw).eval()
         if self.device != "cuda":
             m.to(self.device)
