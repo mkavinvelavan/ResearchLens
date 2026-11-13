@@ -283,7 +283,7 @@ def enrich(out_dir: str | Path, bank=None, steps=("ner", "relations", "figures",
             b.setdefault("entities", []).extend(
                 {"text": e["text"], "type": e["type"], "sentence": i} for e in es)
         if "relations" in steps:
-            t = time.time()
+            t_rel = time.time()
             sent_ents = [(f"{bid}:{i}", es) for (bid, i, _), es in zip(sents, ents) if len(es) >= 2]
             for t in run_relations(bank, sent_ents):
                 bid, i = t["sentence_id"].split(":")
@@ -291,7 +291,7 @@ def enrich(out_dir: str | Path, bank=None, steps=("ner", "relations", "figures",
                 b.setdefault("relations", []).append({**{k: v for k, v in t.items() if k != "sentence_id"},
                                                      "sentence": int(i)})
             bank.release("relation")
-            print(f"[time] relations: {time.time() - t:.0f}s", flush=True)
+            print(f"[time] relations: {time.time() - t_rel:.0f}s", flush=True)
     figs = [b for b in blocks if b["kind"] in ("figure", "table")]
     if "figures" in steps and figs:
         t = time.time()
