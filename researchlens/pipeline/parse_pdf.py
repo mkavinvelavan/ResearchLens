@@ -318,6 +318,11 @@ def parse_pdfplumber(pdf: Path, out: Path) -> dict:
 
 
 # =========================================================================== common post-processing
+# Page-header lines that are not the title, e.g. "Published as a conference paper at ICLR 2021"
+RUNNING_HEADER_RE = re.compile(r"^(published as|under review|accepted (at|to|as)|preprint|arxiv:|proceedings of|"
+                               r"in proceedings|workshop|to appear)", re.I)
+
+
 def finalize(doc: dict, pdf: Path) -> dict:
     blocks = doc["blocks"]
     section, title = "", None
@@ -325,7 +330,7 @@ def finalize(doc: dict, pdf: Path) -> dict:
     for i, b in enumerate(blocks):
         b["id"] = f"b{i:04d}"
         if b["kind"] == "heading":
-            if title is None and b["page"] == 1 and i < 3:
+            if title is None and b["page"] == 1 and i < 5 and not RUNNING_HEADER_RE.match(b["text"]):
                 title = b["text"]
             section = re.sub(r"^\d+(\.\d+)*\.?\s*", "", b["text"]).strip()
         b["section"] = section

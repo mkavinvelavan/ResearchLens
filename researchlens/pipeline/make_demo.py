@@ -58,3 +58,26 @@ if __name__ == "__main__":
     a = ap.parse_args()
     for d in make_demo(a.pdfs, a.work_dir, not a.no_overview):
         print(d)
+
+
+def retitle(paper_id: str, title: str) -> None:
+    """Correct a demo paper's title on the Hub (doc.json + index.json), e.g. when a page header was taken as the title."""
+    import tempfile
+
+    from huggingface_hub import HfApi, hf_hub_download
+
+    api, token = HfApi(), os.environ.get("HF_TOKEN")
+    tmp = Path(tempfile.mkdtemp())
+    for name in (f"demo_papers/{paper_id}/doc.json", "demo_papers/index.json"):
+        data = json.loads(Path(hf_hub_download(REPO, name, repo_type="dataset", token=token)).read_text(encoding="utf-8"))
+        if isinstance(data, list):
+            for d in data:
+                if d["paper_id"] == paper_id:
+                    d["title"] = title
+        else:
+            data["title"] = title
+        f = tmp / Path(name).name
+        f.write_text(json.dumps(data, indent=1, ensure_ascii=False), encoding="utf-8")
+        api.upload_file(path_or_fileobj=str(f), path_in_repo=name, repo_id=REPO, repo_type="dataset", token=token,
+                        commit_message=f"retitle {paper_id}")
+    print("retitled", paper_id, "->", title)
