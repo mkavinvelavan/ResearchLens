@@ -269,13 +269,20 @@ def parse_pdfplumber(pdf: Path, out: Path) -> dict:
                     if lab in seen_labels:
                         u["kind"] = "paragraph"
                     seen_labels.add(lab)
+            heads = [u["top"] for u in units if u["kind"] == "heading" and
+                     re.search(r"abstract|introduction", u["text"], re.I)]
+            title_block_end = min(heads) if pno == 1 and heads else -1
             def body_like(u):   # real body text bounds a figure; short labels inside a figure do not
                 cw = col_x[u["col"]][1] - col_x[u["col"]][0]
                 if u["kind"] != "paragraph":
                     return True
                 if u["col"] == 0 and u["bottom"] < first_col_top + 2:   # title / author block above the columns
                     return True
-                return (u["x1"] - u["x0"]) > 0.6 * cw and len(u["text"]) > 80
+                if u["bottom"] <= title_block_end:                      # page-1 author / affiliation lines
+                    return True
+                toks = re.findall(r"[A-Za-z]+", u["text"])
+                prose = sum(t.islower() for t in toks) / max(len(toks), 1) > 0.5   # figure labels are Capitalised
+                return (u["x1"] - u["x0"]) > 0.6 * cw and len(u["text"]) > 80 and prose
             text_units = [u for u in units if (u["kind"] in ("paragraph", "heading", "equation", "caption") and body_like(u))
                           or (u["kind"] == "cells" and u["col"] == 0 and u["bottom"] < first_col_top + 2)]
             for u in units:
