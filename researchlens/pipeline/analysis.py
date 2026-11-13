@@ -114,9 +114,11 @@ def explain_item(bank, doc: dict, label: str, qc=None, on_text=None) -> dict:
     if kind == "equation":
         res = retrieve(bank, f"results of the method using {label} " + " ".join(t.get("variables") or []), [pid],
                        qc=qc, k_text=2, k_image=1, kinds=["table", "figure", "paragraph"])
-        instr = (f"Explain {label} for a student in three parts: (1) Formula - what it computes, term by term, and "
-                 f"what each variable means; (2) Concept - where and why it is used in the methodology; (3) Result - "
-                 "which experiment or result depends on it. Cite evidence ids.")
+        instr = (f"Explain {label} for a student in three parts: (1) Formula - what it computes, line by line and "
+                 f"term by term, and what each variable means; (2) Concept - where and why it is used in the "
+                 "methodology; (3) Result - which experiment or result depends on it. Cite evidence ids. "
+                 "Read the formula exactly from its image: keep every symbol distinct (e.g. a hatted z-hat^l and a plain "
+                 "z^l are different variables; superscripts like l, l+1 matter) and write formulas in LaTeX ($...$).")
         ev = _merge([[dict(t, via="requested item")], ctx, res], 10)
     else:
         instr = (f"Explain {label}: what type of {kind} it is, what it shows (axes, legend, rows/columns), the key "
