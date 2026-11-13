@@ -240,6 +240,11 @@ def run_qasper(bank, qc, out: Path, args, pacer: Pacer) -> None:
                 rec["retrieval"][name]["mrr"] = 1.0 / (first + 1) if first is not None else 0.0
             # ---------- answers
             rec["answers"] = {}
+            if args.no_answers:            # retrieval-only run: no Gemini calls
+                rec["answer_model"] = None
+                append_jsonl(rec_path, rec)
+                print(f"[QASPER {len(read_jsonl(rec_path))}] retrieval only", flush=True)
+                continue
             settings = {"bge": r_bge[:5], "full": r_ours[:5]}
             for name, ev in settings.items():
                 ev = [dict(x, eid=f"E{i}") for i, x in enumerate(ev, 1)]
@@ -397,7 +402,7 @@ def run_spiqa(bank, qc, out: Path, args, pacer: Pacer) -> None:
                                            "n_evidence": len(full_set)}
         rec["answers"] = {}
         instr = f"Question: {q}\nAnswer in one or two sentences, citing evidence ids."
-        for name, n_img in (("captions_only", 0), ("with_images", 2)):
+        for name, n_img in (() if args.no_answers else (("captions_only", 0), ("with_images", 2))):
             text = pacer.call(generate, bank, build_messages(full, instr, max_images=n_img), max_new_tokens=250)
             if text is None:
                 continue
@@ -496,6 +501,7 @@ def plot(out: Path, qa: dict, sp: dict) -> None:
         axes[0].legend(frameon=False)
         names = [("no_retrieval", "no retrieval"), ("bge", "RAG bge"), ("full", "RAG full")]
         vals = [qa["answers"][n]["answer_f1"] for n, _ in names]
+    if qa.get("n_questions") and all(v[0] is not None for v in vals):
         axes[1].bar(range(3), [100 * v[0] for v in vals], yerr=[[100 * (v[0] - v[1]) for v in vals],
                                                                 [100 * (v[2] - v[0]) for v in vals]], capsize=4)
         axes[1].set_xticks(range(3), [l for _, l in names]); axes[1].set_title("QASPER answer F1 (%)")
@@ -520,6 +526,7 @@ def main():
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--min_gap", type=float, default=5.0, help="seconds between Gemini calls (free tier)")
     ap.add_argument("--parts", default="qasper,spiqa")
+    ap.add_argument("--no_answers", action="store_true", help="retrieval metrics only (no Gemini calls)")
     args = ap.parse_args()
 
     from researchlens.pipeline import answer as A

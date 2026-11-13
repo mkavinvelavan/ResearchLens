@@ -65,13 +65,18 @@ def retrieve(bank, question: str, paper_ids: list[str], qc=None, k_candidates: i
     for pid in paper_ids:   # search each paper separately so a comparison gets evidence from both papers
         cands += _search(qc, qv, "text", _filter([pid], kinds), per_paper)
     items = [{**p, "retrieval_score": round(s, 4), "via": "text search"} for s, p in cands]
-    if rerank and items:
-        scores = evidence_scores(bank, question, [p.get("search_text") or p.get("text", "") for p in items])
-        for it, s in zip(items, scores):
-            it["evidence_score"] = round(s, 4)
-        items.sort(key=lambda x: (-x["evidence_score"], -x["retrieval_score"]))
-    else:
-        items.sort(key=lambda x: -x["retrieval_score"])
+    items.sort(key=lambda x: -x["retrieval_score"])
+    paras = [i for i, x in enumerate(items) if x["kind"] == "paragraph"]
+    if rerank and paras:
+        # The evidence finder was trained on QASPER paragraphs: it re-orders only the paragraphs (NLP side).
+        # Figures and tables keep the place the search gave them (caption search + SigLIP image search, vision
+        # side) - re-ranking captions with it lowered figure Hit@1 from 63.3 to 38.8 in the system evaluation.
+        scores = evidence_scores(bank, question, [items[i].get("search_text") or items[i].get("text", "") for i in paras])
+        for i, s in zip(paras, scores):
+            items[i]["evidence_score"] = round(s, 4)
+        reranked = sorted((items[i] for i in paras), key=lambda x: (-x["evidence_score"], -x["retrieval_score"]))
+        for slot, it in zip(paras, reranked):
+            items[slot] = it
     keep_n = k_text * len(paper_ids) if len(paper_ids) > 1 else k_text
     if len(paper_ids) > 1:   # balanced: top items of each paper
         keep = []
