@@ -57,7 +57,7 @@ def generate(bank, messages: list[dict], max_new_tokens: int = 900, temperature:
     inputs = proc.apply_chat_template(messages, tokenize=True, add_generation_prompt=True, return_dict=True,
                                       return_tensors="pt").to(model.device)
     print(f"[Qwen3-VL] prompt tokens: {inputs['input_ids'].shape[1]}", flush=True)
-    kw = {"max_new_tokens": max_new_tokens, "do_sample": temperature > 0}
+    kw = {"max_new_tokens": max_new_tokens, "do_sample": temperature > 0, "repetition_penalty": 1.05}
     if temperature > 0:
         kw.update(temperature=temperature, top_p=0.9)
     if on_text is None:
