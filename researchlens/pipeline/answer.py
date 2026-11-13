@@ -47,14 +47,33 @@ def build_messages(evidence: list[dict], instruction: str, max_images: int = 2) 
             {"role": "user", "content": content}]
 
 
-API_URL = os.environ.get("QWEN_API_URL", "https://openrouter.ai/api/v1")
-API_MODEL = os.environ.get("QWEN_API_MODEL", "qwen/qwen2.5-vl-32b-instruct:free")
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
+OPENROUTER_URL = "https://openrouter.ai/api/v1"
+GEMINI_MODELS = os.environ.get("GEMINI_MODELS", "gemini-2.5-flash,gemini-2.5-flash-lite")
+OPENROUTER_MODELS = os.environ.get("OPENROUTER_MODELS", "google/gemma-4-31b-it:free,nvidia/nemotron-3.5-super-vl:free,"
+                                   "google/gemma-4-26b-a4b-it:free")
+LAST_MODEL = {"name": None}          # which provider/model produced the last answer (shown in the app)
+
+
+def api_providers() -> list[tuple[str, str, str]]:
+    """(base_url, key, model) to try in order. Free tiers are often busy, so the app falls back to the next one.
+    Secrets: GEMINI_API_KEY (Google AI Studio, free) and/or OPENROUTER_API_KEY (free models; QWEN_API_KEY also accepted).
+    A fully custom endpoint: VLM_API_URL + VLM_API_KEY + VLM_API_MODEL (e.g. a paid Qwen3-VL)."""
+    out = []
+    if os.environ.get("VLM_API_KEY") and os.environ.get("VLM_API_URL"):
+        out.append((os.environ["VLM_API_URL"], os.environ["VLM_API_KEY"], os.environ.get("VLM_API_MODEL", "")))
+    if os.environ.get("GEMINI_API_KEY"):
+        out += [(GEMINI_URL, os.environ["GEMINI_API_KEY"], m.strip()) for m in GEMINI_MODELS.split(",") if m.strip()]
+    key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("QWEN_API_KEY")
+    if key:
+        out += [(OPENROUTER_URL, key, m.strip()) for m in OPENROUTER_MODELS.split(",") if m.strip()]
+    return out
 
 
 def use_api() -> bool:
-    """RL_VLM_MODE=api|local. Default: api when QWEN_API_KEY is set (deployed website), otherwise local Qwen3-VL on GPU."""
+    """RL_VLM_MODE=api|local. Default: api when any API key is set (deployed website), otherwise local Qwen3-VL on GPU."""
     mode = os.environ.get("RL_VLM_MODE", "auto")
-    return mode == "api" or (mode == "auto" and bool(os.environ.get("QWEN_API_KEY")))
+    return mode == "api" or (mode == "auto" and bool(api_providers()))
 
 
 def _to_openai(messages: list[dict]) -> list[dict]:
@@ -77,27 +96,27 @@ def _to_openai(messages: list[dict]) -> list[dict]:
     return out
 
 
-def generate_api(messages: list[dict], max_new_tokens: int = 900, temperature: float = 0.0, on_text=None) -> str:
-    """Any OpenAI-compatible endpoint: OpenRouter (free Qwen2.5-VL), Alibaba Model Studio, HF router ...
-    Set QWEN_API_KEY (secret), optionally QWEN_API_URL and QWEN_API_MODEL."""
+class _Retry(Exception):
+    pass
+
+
+def _call(url, key, model, body, on_text):
     import requests
 
-    key = os.environ.get("QWEN_API_KEY")
-    if not key:
-        raise RuntimeError("QWEN_API_KEY is not set (add it as a secret).")
-    body = {"model": API_MODEL, "messages": _to_openai(messages), "max_tokens": max_new_tokens,
-            "temperature": temperature, "stream": on_text is not None}
-    r = requests.post(f"{API_URL.rstrip('/')}/chat/completions", json=body, stream=on_text is not None, timeout=300,
-                      headers={"Authorization": f"Bearer {key}", "X-Title": "ResearchLens"})
+    try:
+        r = requests.post(f"{url.rstrip('/')}/chat/completions", json={**body, "model": model}, stream=on_text is not None,
+                          timeout=180, headers={"Authorization": f"Bearer {key}", "X-Title": "ResearchLens"})
+    except requests.RequestException as e:
+        raise _Retry(f"{model}: {e}")
+    if r.status_code in (404, 408, 429) or r.status_code >= 500:
+        raise _Retry(f"{model}: HTTP {r.status_code} {r.text[:200]}")
     if r.status_code != 200:
-        msg = r.text[:400]
-        if r.status_code == 429:
-            msg = "API rate limit reached (free tier: about 20 requests/minute, 50/day). Try again later. " + msg
-        raise RuntimeError(f"Qwen API error {r.status_code}: {msg}")
+        raise RuntimeError(f"Vision-language API error {r.status_code} ({model}): {r.text[:400]}")
     if on_text is None:
         return r.json()["choices"][0]["message"]["content"].strip()
     text = ""
-    for line in r.iter_lines(decode_unicode=True):
+    for line in r.iter_lines():
+        line = line.decode("utf-8", "replace") if isinstance(line, bytes) else line
         if not line or not line.startswith("data:"):
             continue
         data = line[5:].strip()
@@ -110,7 +129,31 @@ def generate_api(messages: list[dict], max_new_tokens: int = 900, temperature: f
         if delta:
             text += delta
             on_text(text)
+    if not text.strip():
+        raise _Retry(f"{model}: empty answer")
     return text.strip()
+
+
+def generate_api(messages: list[dict], max_new_tokens: int = 900, temperature: float = 0.0, on_text=None) -> str:
+    """Any OpenAI-compatible endpoint (Google AI Studio Gemini, OpenRouter, a paid Qwen3-VL ...). Tries each
+    provider/model in api_providers() order; a busy (429), removed (404) or failing (5xx) one moves on to the next."""
+    providers = api_providers()
+    if not providers:
+        raise RuntimeError("No API key set: add GEMINI_API_KEY and/or OPENROUTER_API_KEY as a secret.")
+    body = {"messages": _to_openai(messages), "max_tokens": max_new_tokens, "temperature": temperature,
+            "stream": on_text is not None}
+    errors = []
+    for url, key, model in providers:
+        try:
+            text = _call(url, key, model, body, on_text)
+            LAST_MODEL["name"] = model
+            print(f"[API] answered by {model}", flush=True)
+            return text
+        except _Retry as e:
+            errors.append(str(e))
+            print(f"[API] {e} -> trying next", flush=True)
+    raise RuntimeError("All free vision-language APIs are busy or unavailable right now. Try again in a minute.\n"
+                       + "\n".join(errors))
 
 
 def generate(bank, messages: list[dict], max_new_tokens: int = 900, temperature: float = 0.0, on_text=None) -> str:
