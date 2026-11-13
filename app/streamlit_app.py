@@ -71,12 +71,12 @@ def show_trace(trace: list[dict], title: str = "Evidence Trace"):
                     st.image(t["image"], use_container_width=True)
 
 
-def paper_picker(label="Paper", key=None):
+def paper_picker(label="Paper", key=None, index=0):
     if not ss.docs:
         st.info("Upload a paper first (Upload page).")
         st.stop()
     opts = {d.get("title", pid)[:90]: pid for pid, d in ss.docs.items()}
-    return opts[st.selectbox(label, list(opts), key=key)]
+    return opts[st.selectbox(label, list(opts), key=key, index=min(index, len(opts) - 1))]
 
 
 DEMO_REPO = f"{os.environ.get('RL_HF_USER', 'Kavinvelavan')}/researchlens-results"   # private HF dataset
@@ -251,7 +251,7 @@ def page_compare():
         st.info("Upload two papers to compare them.")
         return
     a = paper_picker("Paper A", "cmp_a")
-    b = paper_picker("Paper B", "cmp_b")
+    b = paper_picker("Paper B", "cmp_b", index=1)
     if a == b:
         st.warning("Pick two different papers.")
         return
@@ -279,11 +279,18 @@ def page_gaps():
         st.info("Upload two papers first.")
         return
     a = paper_picker("Paper A", "gap_a")
-    b = paper_picker("Paper B", "gap_b")
-    if st.button("Find gaps", type="primary") and a != b:
-        with st.spinner("Reading limitations, datasets, evaluation and future work..."):
-            ss.gaps = gap_map(get_bank(), ss.docs[a], ss.docs[b], qc=get_qdrant())
-            ss.ideas = None
+    b = paper_picker("Paper B", "gap_b", index=1)
+    if a == b:
+        st.warning("Pick two different papers.")
+        return
+    if st.button("Find gaps", type="primary"):
+        with st.spinner("Reading limitations, datasets, evaluation and future work (about a minute)..."):
+            try:
+                ss.gaps = gap_map(get_bank(), ss.docs[a], ss.docs[b], qc=get_qdrant())
+                ss.ideas = None
+            except Exception as e:
+                st.error(f"Could not build the Gap Map: {e}")
+                return
     g = ss.gaps
     if not g:
         return
@@ -306,7 +313,10 @@ def page_gaps():
     st.caption("Suggestions to explore, derived from the gaps above — not guaranteed or proven solutions.")
     if st.button("Generate ideas"):
         with st.spinner("Thinking about directions..."):
-            ss.ideas = ideas(get_bank(), [x for x in g["gaps"] if x["supported"]], ss.docs[a], ss.docs[b])
+            try:
+                ss.ideas = ideas(get_bank(), [x for x in g["gaps"] if x["supported"]], ss.docs[a], ss.docs[b])
+            except Exception as e:
+                st.error(f"Could not generate ideas: {e}")
     if ss.ideas:
         for idea in ss.ideas["ideas"]:
             with st.container(border=True):
