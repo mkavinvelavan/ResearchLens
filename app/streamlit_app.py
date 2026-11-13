@@ -113,8 +113,10 @@ def page_overview():
     pid = paper_picker()
     doc = ss.docs[pid]
     if pid not in ss.overviews or st.button("Regenerate"):
+        box = st.empty()
         with st.spinner("Retrieving evidence and writing the overview..."):
-            ss.overviews[pid] = overview(get_bank(), doc, qc=get_qdrant())
+            ss.overviews[pid] = overview(get_bank(), doc, qc=get_qdrant(), on_text=lambda t: box.markdown(t + " ▌"))
+        box.empty()
     res = ss.overviews[pid]
     st.markdown(res["overview"])
     show_trace(res["trace"])
@@ -136,9 +138,11 @@ def page_ask():
         ss.chat.append({"role": "user", "content": q})
         with st.chat_message("user"):
             st.markdown(q)
-        with st.chat_message("assistant"), st.spinner("Retrieving evidence..."):
-            r = ask(get_bank(), q, ids, qc=get_qdrant())
-            st.markdown(r["answer"])
+        with st.chat_message("assistant"):
+            box = st.empty()
+            box.markdown("_Retrieving evidence..._")
+            r = ask(get_bank(), q, ids, qc=get_qdrant(), on_text=lambda t: box.markdown(t + " ▌"))
+            box.markdown(r["answer"])
             show_trace(r["trace"])
         ss.chat.append({"role": "assistant", "content": r["answer"], "trace": r["trace"]})
 
@@ -160,9 +164,16 @@ def page_explain():
         if b.get("image"):
             st.image(str(Path(doc["out_dir"]) / b["image"]), use_container_width=True)
         if b["kind"] == "equation":
-            if b.get("latex"):
-                st.latex(b["latex"])
-            st.caption(f"TrOCR: `{b.get('latex_trocr', '-')}`")
+            if b.get("latex_ok", True) and b.get("latex"):
+                lx = b["latex"]
+                try:
+                    st.latex(r"\begin{gathered}" + lx + r"\end{gathered}" if b.get("latex_lines", 1) > 1 else lx)
+                except Exception:
+                    st.code(lx)
+                st.caption(f"Read by our TrOCR model ({b.get('latex_lines', 1)} line(s)).")
+            else:
+                st.caption("Our TrOCR model could not read this equation reliably, so its output is hidden; "
+                           "Qwen3-VL reads the equation directly from the image instead.")
         else:
             st.caption(b.get("caption", ""))
             if b.get("figure_type"):
@@ -171,9 +182,10 @@ def page_explain():
                            f"{src.get('image')}, caption model: {src.get('caption')}")
     with c2:
         if st.button("Explain", type="primary"):
-            with st.spinner("Explaining..."):
-                r = explain_item(get_bank(), doc, lab, qc=get_qdrant())
-            st.markdown(r["answer"])
+            box = st.empty()
+            box.markdown("_Retrieving evidence..._")
+            r = explain_item(get_bank(), doc, lab, qc=get_qdrant(), on_text=lambda t: box.markdown(t + " ▌"))
+            box.markdown(r["answer"])
             show_trace(r["trace"])
 
 
@@ -190,8 +202,11 @@ def page_compare():
         st.warning("Pick two different papers.")
         return
     if st.button("Compare", type="primary"):
+        box = st.empty()
         with st.spinner("Comparing (this takes a minute)..."):
-            ss.comparison = compare(get_bank(), ss.docs[a], ss.docs[b], qc=get_qdrant())
+            ss.comparison = compare(get_bank(), ss.docs[a], ss.docs[b], qc=get_qdrant(),
+                                    on_text=lambda t: box.markdown(t + " ▌"))
+        box.empty()
     r = ss.comparison
     if r:
         st.markdown(r["comparison"])

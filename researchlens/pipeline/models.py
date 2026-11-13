@@ -130,7 +130,8 @@ class ModelBank:
         proc = AutoProcessor.from_pretrained(VLM)
         kw = {"dtype": torch.bfloat16 if self.device == "cuda" and torch.cuda.is_bf16_supported() else self.dtype}
         if self.device == "cuda":
-            kw["device_map"] = "auto"   # spreads the 4B model over every visible GPU (e.g. Kaggle's 2 x T4)
+            # 2 GPUs (Kaggle 2 x T4): Qwen3-VL gets GPU 1 to itself, our small models stay on GPU 0 -> no memory fights
+            kw["device_map"] = {"": 1} if torch.cuda.device_count() > 1 else "auto"
         m = AutoModelForImageTextToText.from_pretrained(VLM, **kw).eval()
         if self.device != "cuda":
             m.to(self.device)

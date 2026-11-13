@@ -53,7 +53,7 @@ def entity_summary(doc: dict, top: int = 8) -> dict:
 
 
 # ------------------------------------------------------------------ single paper
-def overview(bank, doc: dict, qc=None) -> dict:
+def overview(bank, doc: dict, qc=None, on_text=None) -> dict:
     pid = doc["paper_id"]
     lists = [retrieve(bank, q, [pid], qc=qc, k_text=2, k_image=0) for q in OVERVIEW_ASPECTS.values()]
     lists.append(retrieve(bank, "main results table or results figure", [pid], qc=qc, k_text=1, k_image=1,
@@ -70,11 +70,11 @@ def overview(bank, doc: dict, qc=None) -> dict:
         "each equation computes and what its variables mean. If a section is not covered by the evidence, write "
         "'Not stated in the retrieved evidence.'\n"
         f"Entities our NER model found most often (for reference): {json.dumps(ents)}")
-    text = generate(bank, build_messages(ev, instr), max_new_tokens=1100)
+    text = generate(bank, build_messages(ev, instr), max_new_tokens=1400, on_text=on_text)
     return {"overview": text, "trace": evidence_trace(text, ev), "evidence": ev, "entities": ents}
 
 
-def explain_item(bank, doc: dict, label: str, qc=None) -> dict:
+def explain_item(bank, doc: dict, label: str, qc=None, on_text=None) -> dict:
     """Figure / table / equation explanation, incl. Formula -> Concept -> Result."""
     pid = doc["paper_id"]
     target = by_labels(qc, [pid], [label]) if qc is not None else []
@@ -98,7 +98,7 @@ def explain_item(bank, doc: dict, label: str, qc=None) -> dict:
         instr = (f"Explain {label}: what type of {kind} it is, what it shows (axes, legend, rows/columns), the key "
                  "numbers or trends, and what conclusion the paper draws from it. Cite evidence ids.")
         ev = _merge([[dict(t, via="requested item")], ctx], 8)
-    text = generate(bank, build_messages(ev, instr), max_new_tokens=700)
+    text = generate(bank, build_messages(ev, instr), max_new_tokens=1200, on_text=on_text)
     return {"answer": text, "trace": evidence_trace(text, ev), "evidence": ev}
 
 
@@ -113,7 +113,7 @@ def shared_entities(doc_a: dict, doc_b: dict) -> dict:
     return out
 
 
-def compare(bank, doc_a: dict, doc_b: dict, qc=None) -> dict:
+def compare(bank, doc_a: dict, doc_b: dict, qc=None, on_text=None) -> dict:
     ids = [doc_a["paper_id"], doc_b["paper_id"]]
     qs = ["research problem and objectives", "proposed method and model architecture", "datasets used",
           "evaluation metrics and experimental setup", "main results", "limitations and future work"]
@@ -127,7 +127,7 @@ def compare(bank, doc_a: dict, doc_b: dict, qc=None) -> dict:
         "Paper B, with citations [E#] in the cells. Then write 'Key similarities' and 'Key differences' as bullet "
         "points, and compare their figures/tables where images are provided.\n"
         f"Entity overlap found by our NER model: {json.dumps(overlap)}")
-    text = generate(bank, build_messages(ev, instr, max_images=2), max_new_tokens=1400)
+    text = generate(bank, build_messages(ev, instr, max_images=2), max_new_tokens=1600, on_text=on_text)
     return {"comparison": text, "trace": evidence_trace(text, ev), "evidence": ev, "entity_overlap": overlap}
 
 

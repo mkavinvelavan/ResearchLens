@@ -112,13 +112,19 @@ def describe(item: dict, max_chars: int = 900) -> str:
     k = item["kind"]
     if k in ("figure", "table"):
         body = f"{item.get('label') or k}: {item.get('caption') or ''}"
-        extra = " ".join(x for x in (item.get("text"), item.get("ocr_text")) if x)
-        if extra:
-            body += f"\nText/values inside: {extra[:500]}"
+        if item.get("table_text"):
+            body += ("\nTABLE CONTENT (rows, cells separated by |; section headers like '(a) ...' / '(b) ...' apply to "
+                     f"the rows below them):\n{item['table_text'][:2500]}")
+            max_chars = max(max_chars, 3200)
+        else:
+            extra = " ".join(x for x in (item.get("text"), item.get("ocr_text")) if x)
+            if extra:
+                body += f"\nText/values inside: {extra[:500]}"
         if item.get("figure_type"):
             body += f"\n(figure type: {item['figure_type']}; image attached)" if item.get("image") else ""
     elif k == "equation":
-        body = f"{item.get('label')}: $${item.get('latex') or item.get('text')}$$\nSurrounding text: {(item.get('context') or '')[:500]}"
+        lx = item.get("latex") if item.get("latex_ok", True) else None
+        body = f"{item.get('label')}: " + (f"$${lx}$$" if lx else "(read the equation from its image)") + f"\nSurrounding text: {(item.get('context') or '')[:500]}"
     else:
         body = item.get("text", "")
     return f"{loc}\n{body[:max_chars]}"

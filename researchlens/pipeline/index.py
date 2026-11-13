@@ -95,7 +95,7 @@ def block_text(b: dict) -> str:
     if k == "paragraph":
         return f"{b.get('section', '')}: {b['text']}".strip(": ")
     if k in ("figure", "table"):
-        inner = " ".join(x for x in (b.get("text"), b.get("ocr_text")) if x)[:800]
+        inner = " ".join(x for x in (b.get("table_text") or b.get("text"), b.get("ocr_text")) if x)[:1200]
         typ = f" ({b['figure_type']})" if b.get("figure_type") else ""
         return f"{b.get('label', k)}{typ}: {b.get('caption', '')} {('Content: ' + inner) if inner else ''}".strip()
     if k == "equation":
@@ -127,7 +127,8 @@ def index_paper(out_dir: str | Path, bank, qc=None) -> int:
                    "figure_type": b.get("figure_type"), "latex": b.get("latex"), "variables": b.get("variables"),
                    "context": b.get("context"), "entities": b.get("entities", [])[:40],
                    "relations": b.get("relations", [])[:30], "mentions": b.get("mentions", []),
-                   "mentioned_in": b.get("mentioned_in", []), "ocr_text": b.get("ocr_text")}
+                   "mentioned_in": b.get("mentioned_in", []), "ocr_text": b.get("ocr_text"),
+                   "table_text": b.get("table_text"), "latex_ok": b.get("latex_ok", True)}
         pid = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc['paper_id']}/{b['id']}"))
         points.append(qm.PointStruct(id=pid, vector=vec, payload=payload))
     for i in range(0, len(points), 128):

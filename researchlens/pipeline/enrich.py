@@ -164,21 +164,64 @@ def figure_ocr(bank, out_dir: Path, figs: list[dict]) -> None:
 
 
 # ------------------------------------------------------------------ formulas
+def split_lines(img, min_gap: int = 6, min_h: int = 12):
+    """Cut a multi-line equation image into one image per line (TrOCR was trained on single-line formulas)."""
+    import numpy as np
+
+    g = np.asarray(img.convert("L"), dtype=np.float32)
+    ink = (g < 160).sum(1)
+    rows = ink > max(1, 0.002 * g.shape[1])
+    lines, start, gap = [], None, 0
+    for y, on in enumerate(rows):
+        if on:
+            if start is None:
+                start = y
+            gap = 0
+        elif start is not None:
+            gap += 1
+            if gap >= min_gap:
+                if y - gap - start + 1 >= min_h:
+                    lines.append((start, y - gap + 1))
+                start, gap = None, 0
+    if start is not None and len(rows) - start >= min_h:
+        lines.append((start, len(rows)))
+    if len(lines) <= 1:
+        return [img]
+    return [img.crop((0, max(0, s - 3), img.width, min(img.height, e + 3))) for s, e in lines]
+
+
+def latex_is_garbage(lx: str) -> bool:
+    """TrOCR on an out-of-distribution image loops: '\\ \\ \\ ...' or one token repeated."""
+    from collections import Counter
+
+    toks = lx.split()
+    if len(toks) < 2:
+        return not lx.strip()
+    tok, n = Counter(toks).most_common(1)[0]
+    return (n / len(toks) > 0.45 and len(toks) > 8) or sum(t in ("\\", "\\!", "\\,", "\\;") for t in toks) / len(toks) > 0.4
+
+
 def formulas(bank, out_dir: Path, eqs: list[dict], batch_size: int = 8) -> None:
     import torch
     from PIL import Image
 
     proc, model = bank.formula
-    todo = [b for b in eqs if b.get("image") and (out_dir / b["image"]).exists()]
-    for chunk in batched(todo, batch_size):
-        imgs = [Image.open(out_dir / b["image"]).convert("RGB") for b in chunk]
-        px = proc(images=imgs, return_tensors="pt").pixel_values.to(bank.device)
-        with torch.no_grad():
-            ids = model.generate(px, max_new_tokens=160, num_beams=3)
-        for b, t in zip(chunk, proc.batch_decode(ids, skip_special_tokens=True)):
-            b["latex_trocr"] = t.strip()
-            if not b.get("latex"):
-                b["latex"] = b["latex_trocr"]
+    for b in eqs:
+        if not (b.get("image") and (out_dir / b["image"]).exists()):
+            continue
+        lines = split_lines(Image.open(out_dir / b["image"]).convert("RGB"))
+        outs = []
+        for chunk in batched(lines, batch_size):
+            px = proc(images=chunk, return_tensors="pt").pixel_values.to(bank.device)
+            with torch.no_grad():
+                ids = model.generate(px, max_new_tokens=160, num_beams=3)
+            outs += [t.strip() for t in proc.batch_decode(ids, skip_special_tokens=True)]
+        good = [o for o in outs if not latex_is_garbage(o)]
+        b["latex_lines"] = len(lines)
+        b["latex_trocr"] = " \\\\ ".join(good)
+        b["latex_ok"] = bool(good) and len(good) >= max(1, len(outs) // 2)
+        if not b.get("latex") and b["latex_ok"]:
+            b["latex"] = b["latex_trocr"]
     for b in eqs:   # variables = single letters / greek commands appearing in the LaTeX
         lx = b.get("latex") or ""
         b["variables"] = sorted(set(re.findall(r"\\(?:alpha|beta|gamma|delta|epsilon|theta|lambda|mu|sigma|tau|phi|"

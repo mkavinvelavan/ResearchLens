@@ -64,6 +64,8 @@ def parse_mineru(pdf: Path, out: Path) -> dict:
             cap = " ".join(it.get(f"{'image' if t == 'image' else 'table'}_caption") or []).strip()
             b.update(kind="figure" if t == "image" else "table", caption=cap,
                      text=(it.get("table_body") or "") if t == "table" else "")
+            if t == "table":
+                b["table_text"] = html_table_text(it.get("table_body") or "")
             if it.get("img_path"):
                 src = base / it["img_path"]
                 if src.exists():
@@ -169,6 +171,57 @@ def _crop(pdf_doc, page_no: int, bbox, out: Path, name: str, scale: float = 2.5)
                           min(crop.height, content[3] + 6)))
     crop.save(path)
     return str(path.relative_to(out))
+
+
+def table_grid(page, region) -> str:
+    """Rows and cells of a table region as text: 'cell | cell | cell' per line (the model reads exact numbers here)."""
+    x0, top, x1, bottom = region
+    try:
+        words = page.within_bbox((max(x0 - 2, 0), max(top - 2, 0), min(x1 + 2, page.width),
+                                  min(bottom + 2, page.height))).extract_words(x_tolerance=1.5, y_tolerance=2,
+                                                                               extra_attrs=["size"])
+    except Exception:
+        return ""
+    # superscripts (224^2) are smaller and raised: glue them to the word on their left with '^'
+    words.sort(key=lambda w: (round(w["top"]), w["x0"]))
+    body = [w for w in words if w["size"] >= 0.8 * max(x["size"] for x in words)]
+    for w in [w for w in words if w["size"] < 0.8 * max(x["size"] for x in words)]:
+        left = [b for b in body if 0 <= w["x0"] - b["x1"] < 1.5 and b["top"] - 2 < w["top"] < b["bottom"]]
+        if left:
+            left[0]["text"] += "^" + w["text"]
+        else:
+            body.append(w)
+    words = sorted(body, key=lambda w: w["bottom"])
+    rows, cur = [], []
+    for w in words:
+        if cur and abs(w["bottom"] - cur[0]["bottom"]) > 2.5:
+            rows.append(cur)
+            cur = []
+        cur.append(w)
+    if cur:
+        rows.append(cur)
+    lines = []
+    for r in rows:
+        r.sort(key=lambda w: w["x0"])
+        cells, cell = [], [r[0]]
+        for a, b in zip(r, r[1:]):
+            if b["x0"] - a["x1"] > 5:
+                cells.append(" ".join(w["text"] for w in cell))
+                cell = []
+            cell.append(b)
+        cells.append(" ".join(w["text"] for w in cell))
+        lines.append(" | ".join(cells))
+    return "\n".join(lines)[:4000]
+
+
+def html_table_text(html: str) -> str:
+    """MinerU gives tables as HTML -> same 'cell | cell' rows."""
+    rows = re.findall(r"<tr[^>]*>(.*?)</tr>", html or "", re.S | re.I)
+    out = []
+    for r in rows:
+        cells = [re.sub(r"<[^>]+>", "", c).strip() for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", r, re.S | re.I)]
+        out.append(" | ".join(cells))
+    return "\n".join(out)[:4000]
 
 
 def _is_math_line(text: str) -> bool:
@@ -315,6 +368,8 @@ def parse_pdfplumber(pdf: Path, out: Path) -> dict:
                     b.update(label=u["label"], caption=u["caption"], text=" ".join(u.get("inner_text", [])),
                              bbox=[round(v, 1) for v in u["region"]])
                     b["image"] = _crop(pdf_doc, pno, u["region"], out, f"p{pno}_{u['label'].replace(' ', '')}")
+                    if u["kind"] == "table":
+                        b["table_text"] = table_grid(page, u["region"])
                 elif u["kind"] == "equation":
                     b.update(label=f"Equation {u['num']}", text=re.sub(rf"\(\s*{u['num']}\s*\)", "", u["text"]).strip())
                     b["image"] = _crop(pdf_doc, pno, (u["x0"], u["top"] - 2, u["x1"] - 24, u["bottom"] + 2), out,
@@ -335,6 +390,8 @@ def finalize(doc: dict, pdf: Path) -> dict:
                 title = b["text"]
             section = re.sub(r"^\d+(\.\d+)*\.?\s*", "", b["text"]).strip()
         b["section"] = section
+        if b["kind"] == "paragraph" and re.match(r"^(references|bibliography|literature cited)$", section, re.I):
+            b["kind"] = "reference"      # not searched, no entities: conference names would pollute everything
         if b["kind"] in ("figure", "table") and not b.get("label"):
             m = CAPTION_RE.match(b.get("caption") or "")
             if m:
