@@ -114,7 +114,7 @@ def describe(item: dict, max_chars: int = 700) -> str:
         body = f"{item.get('label') or k}: {item.get('caption') or ''}"
         if item.get("table_text"):
             body += ("\nTABLE CONTENT (rows, cells separated by |; section headers like '(a) ...' / '(b) ...' apply to "
-                     f"the rows below them):\n{item['table_text'][:1800]}")
+                     f"the rows below them):\n{item['table_text'][:1400]}")
             max_chars = max(max_chars, 2300)
         else:
             extra = " ".join(x for x in (item.get("text"), item.get("ocr_text")) if x)

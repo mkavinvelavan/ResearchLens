@@ -128,11 +128,20 @@ class ModelBank:
         from transformers import AutoModelForImageTextToText, AutoProcessor
 
         proc = AutoProcessor.from_pretrained(VLM)
-        kw = {"dtype": torch.bfloat16 if self.device == "cuda" and torch.cuda.is_bf16_supported() else self.dtype}
+        # bf16 only on GPUs that really have it (Ampere+); a T4 "supports" bf16 only by slow emulation -> fp16
+        native_bf16 = self.device == "cuda" and torch.cuda.get_device_capability(0)[0] >= 8
+        kw = {"dtype": torch.bfloat16 if native_bf16 else self.dtype}
         if self.device == "cuda":
-            # 2 GPUs (Kaggle 2 x T4): Qwen3-VL gets GPU 1 to itself, our small models stay on GPU 0 -> no memory fights
-            # 2 GPUs (Kaggle 2 x T4): Qwen3-VL (~9 GB) gets GPU 1 alone, our small models stay on GPU 0
+            # 2 GPUs (Kaggle 2 x T4): Qwen3-VL gets GPU 1 alone, our small models stay on GPU 0
             kw["device_map"] = {"": 1} if torch.cuda.device_count() > 1 else "auto"
+            # 16 GB GPUs: 4-bit weights (~3 GB instead of ~9 GB) leave room for long multimodal prompts
+            small_gpu = torch.cuda.get_device_properties(0).total_memory < 20e9
+            if os.environ.get("RL_VLM_4BIT", "1" if small_gpu else "0") == "1":
+                from transformers import BitsAndBytesConfig
+
+                kw["quantization_config"] = BitsAndBytesConfig(
+                    load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True,
+                    bnb_4bit_compute_dtype=torch.bfloat16 if native_bf16 else torch.float16)
         m = AutoModelForImageTextToText.from_pretrained(VLM, **kw).eval()
         if self.device != "cuda":
             m.to(self.device)
