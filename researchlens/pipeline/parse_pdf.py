@@ -97,10 +97,12 @@ def _lines(page) -> list[dict]:
     W = page.width
     mid = W / 2
     words = page.extract_words(extra_attrs=["size", "fontname"], x_tolerance=1.5, y_tolerance=2, keep_blank_chars=False)
-    words.sort(key=lambda w: (w["top"], w["x0"]))
+    # group by baseline (bottom), not top: small capitals / drop caps share the baseline but not the top
+    words.sort(key=lambda w: (round(w["bottom"]), w["x0"]))
+    words.sort(key=lambda w: w["bottom"])
     rows, cur = [], []
     for w in words:
-        if cur and abs(w["top"] - cur[0]["top"]) > 2.5:
+        if cur and abs(w["bottom"] - cur[0]["bottom"]) > 2.0:
             rows.append(cur)
             cur = []
         cur.append(w)
@@ -128,14 +130,17 @@ def _lines(page) -> list[dict]:
             seg = sorted(seg, key=lambda w: w["x0"])
             x0, x1 = seg[0]["x0"], max(w["x1"] for w in seg)
             col = 1 if not two_col else (2 if x0 >= mid - 10 else 0 if x1 > mid + 20 else 1)
-            text = " ".join(w["text"] for w in seg)
+            text = seg[0]["text"]
+            for a, b in zip(seg, seg[1:]):   # pieces split only by a font change (small caps) are one word
+                text += ("" if b["x0"] - a["x1"] < 0.12 * max(a.get("size", 10), 6) else " ") + b["text"]
             text = re.sub(r"\(cid:\d+\)", "?", text)
             sizes = [round(w.get("size", 0), 1) for w in seg]
             fonts = [w.get("fontname", "") for w in seg]
             out.append({"text": text, "x0": x0, "x1": x1, "top": min(w["top"] for w in seg),
                         "bottom": max(w["bottom"] for w in seg), "col": col,
                         "size": Counter(sizes).most_common(1)[0][0] if sizes else 0,
-                        "bold": sum("bold" in f.lower() or "CMBX" in f for f in fonts) > len(fonts) / 2})
+                        "bold": sum(any(k in f.lower() for k in ("bold", "medi", "semibold", "black", "heavy", "-bd", "cmbx"))
+                                for f in fonts) > len(fonts) / 2})
     return out, two_col
 
 
