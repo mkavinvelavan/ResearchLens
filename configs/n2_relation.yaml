@@ -1,0 +1,19 @@
+# N2 - SciBERT relation extraction on SciERC (gold entities, all ordered pairs, NONE = no relation)
+# Same regularisation family as the NER model (wd 0.05, dropout, frozen embeddings, early stopping).
+model_name: allenai/scibert_scivocab_uncased
+model_tag: n2_relation
+run_name: scibert_relation
+data_dir: /content/data/scierc
+epochs: 6
+lr: 3.0e-5
+batch_size: 32
+max_length: 160
+warmup_ratio: 0.1
+weight_decay: 0.05
+hidden_dropout: 0.2
+attention_dropout: 0.1
+head_dropout: 0.1
+freeze_embeddings: true
+label_smoothing: 0.0
+early_stopping_patience: 2
+hub_repo: researchlens-scibert-relation

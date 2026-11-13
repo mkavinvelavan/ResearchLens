@@ -1,0 +1,20 @@
+# N3 - SciBERT evidence finder on QASPER: (question, passage) -> evidence or not.
+# Train on evidence + 3 hard (word-overlap) + 3 random negatives per question; test by ranking every passage.
+model_name: allenai/scibert_scivocab_uncased
+model_tag: n3_evidence
+run_name: scibert_evidence
+data_dir: /content/data/qasper
+epochs: 3
+lr: 2.0e-5
+batch_size: 32
+max_length: 256
+n_hard: 3
+n_random: 3
+warmup_ratio: 0.1
+weight_decay: 0.05
+hidden_dropout: 0.2
+attention_dropout: 0.1
+freeze_embeddings: true
+label_smoothing: 0.0
+early_stopping_patience: 1
+hub_repo: researchlens-scibert-evidence
