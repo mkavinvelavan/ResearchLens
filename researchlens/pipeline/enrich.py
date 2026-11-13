@@ -66,6 +66,12 @@ def run_ner(bank, sents: list[str], batch_size: int = 32) -> list[list[dict]]:
 
 
 # ------------------------------------------------------------------ relations
+# On CPU hosting (low-memory mode) only nearby entity pairs are scored: most SciERC relations link entities a few words
+# apart, and scoring every pair of a long sentence is too slow on 2 CPU cores.
+MAX_PAIR_GAP_CPU = 15
+MAX_PAIRS_CPU = 1500
+
+
 def run_relations(bank, sent_ents: list[tuple[str, list[dict]]], min_conf: float = 0.5, batch_size: int = 64):
     """sent_ents: [(sentence_id, entities with 'words', 'start', 'end')] -> list of triples."""
     import torch
@@ -80,9 +86,16 @@ def run_relations(bank, sent_ents: list[tuple[str, list[dict]]], min_conf: float
             for b in ents:
                 if a is b or (a["start"] <= b["end"] and b["start"] <= a["end"]):
                     continue
+                gap = max(a["start"], b["start"]) - min(a["end"], b["end"])   # words between the two entities
+                if bank.low_memory and gap > MAX_PAIR_GAP_CPU:
+                    continue
                 ptb = [PTB.get(w, w) for w in a["words"]]   # SciERC uses -LRB- / -RRB- for brackets
                 ws, i1, i2 = mark(ptb, (a["start"], a["end"]), (b["start"], b["end"]))
-                items.append((sid, a, b, ws, i1, i2))
+                items.append((sid, a, b, ws, i1, i2, gap))
+    if bank.low_memory and len(items) > MAX_PAIRS_CPU:     # CPU hosting: keep the closest pairs
+        items = sorted(items, key=lambda c: c[6])[:MAX_PAIRS_CPU]
+    print(f"[relations] scoring {len(items)} entity pairs", flush=True)
+    items.sort(key=lambda c: len(c[3]))                     # similar lengths per batch -> less padding, faster
     triples = []
     for chunk in batched(items, batch_size):
         enc = tok([c[3] for c in chunk], is_split_into_words=True, truncation=True, max_length=cfg.get("max_length", 160),

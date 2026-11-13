@@ -28,6 +28,25 @@ TEXT_EMBEDDER = os.environ.get("RL_TEXT_EMBEDDER", "BAAI/bge-small-en-v1.5")
 SIGLIP = os.environ.get("RL_SIGLIP", "google/siglip-base-patch16-224")
 
 
+def cpu_limit() -> int:
+    """CPU cores this container may really use. Hosted containers (Streamlit Cloud) often see the host's many cores but
+    are limited to ~2 by a cgroup quota; using more threads than that makes PyTorch much slower."""
+    n = os.cpu_count() or 1
+    try:
+        quota, period = open("/sys/fs/cgroup/cpu.max").read().split()[:2]       # cgroup v2: "200000 100000"
+        if quota != "max":
+            n = min(n, max(1, int(int(quota) / int(period))))
+    except Exception:
+        try:                                                                     # cgroup v1
+            q = int(open("/sys/fs/cgroup/cpu/cpu.cfs_quota_us").read())
+            per = int(open("/sys/fs/cgroup/cpu/cpu.cfs_period_us").read())
+            if q > 0:
+                n = min(n, max(1, q // per))
+        except Exception:
+            pass
+    return int(os.environ.get("RL_THREADS", n))
+
+
 class ModelBank:
     def __init__(self, device: str | None = None, token: str | None = None):
         import torch
@@ -39,7 +58,8 @@ class ModelBank:
         # so only the search models (bge, SigLIP, evidence finder) stay in memory. On by default without a GPU.
         self.low_memory = os.environ.get("RL_LOW_MEMORY", "0" if self.device == "cuda" else "1") == "1"
         if self.device == "cpu":
-            torch.set_num_threads(max(1, os.cpu_count() or 1))
+            torch.set_num_threads(cpu_limit())
+            print(f"[models] CPU mode: {torch.get_num_threads()} threads, low_memory={self.low_memory}", flush=True)
 
     def release(self, *names: str):
         """Free models that are no longer needed (only in low-memory mode)."""
