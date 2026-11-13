@@ -1,4 +1,4 @@
-# Part 2 pipeline + Part 3 Streamlit app (GPU machine: Kaggle / Colab / HF Space)
+# Part 2 pipeline + Part 3 Streamlit app on Kaggle / Colab (Streamlit Cloud uses app/requirements.txt)
 transformers>=4.57
 accelerate>=0.34
 huggingface_hub>=0.25

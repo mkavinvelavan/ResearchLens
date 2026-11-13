@@ -261,6 +261,7 @@ def enrich(out_dir: str | Path, bank=None, steps=("ner", "relations", "figures",
     sents = [(b["id"], i, s) for b in paras for i, s in enumerate(sentences(b["text"]))]
     if "ner" in steps and sents:
         ents = run_ner(bank, [s for _, _, s in sents])
+        bank.release("ner")
         for (bid, i, s), es in zip(sents, ents):
             b = next(x for x in paras if x["id"] == bid)
             b.setdefault("entities", []).extend(
@@ -272,14 +273,17 @@ def enrich(out_dir: str | Path, bank=None, steps=("ner", "relations", "figures",
                 b = next(x for x in paras if x["id"] == bid)
                 b.setdefault("relations", []).append({**{k: v for k, v in t.items() if k != "sentence_id"},
                                                      "sentence": int(i)})
+            bank.release("relation")
     figs = [b for b in blocks if b["kind"] in ("figure", "table")]
     if "figures" in steps and figs:
         figure_types(bank, out_dir, figs)
+        bank.release("figtype", "captype")
     if "ocr" in steps and figs:
         figure_ocr(bank, out_dir, figs)
     eqs = [b for b in blocks if b["kind"] == "equation"]
     if "formulas" in steps and eqs:
         formulas(bank, out_dir, eqs)
+        bank.release("formula")
 
     # paper-level entity / relation summary (used by the overview and comparison)
     from collections import Counter

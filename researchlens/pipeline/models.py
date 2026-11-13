@@ -35,6 +35,22 @@ class ModelBank:
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.token = token or os.environ.get("HF_TOKEN")
         self.dtype = torch.float16 if self.device == "cuda" else torch.float32
+        # Low-memory mode (free hosting, ~2.7 GB RAM): a processing model is loaded for its step and freed right after,
+        # so only the search models (bge, SigLIP, evidence finder) stay in memory. On by default without a GPU.
+        self.low_memory = os.environ.get("RL_LOW_MEMORY", "0" if self.device == "cuda" else "1") == "1"
+        if self.device == "cpu":
+            torch.set_num_threads(max(1, os.cpu_count() or 1))
+
+    def release(self, *names: str):
+        """Free models that are no longer needed (only in low-memory mode)."""
+        if not self.low_memory:
+            return
+        import gc
+
+        freed = [n for n in names if self.__dict__.pop(n, None) is not None]
+        if freed:
+            gc.collect()
+            print(f"[models] freed {', '.join(freed)}", flush=True)
 
     def _kw(self):
         return {"token": self.token} if self.token else {}

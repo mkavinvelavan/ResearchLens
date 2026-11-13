@@ -1,0 +1,15 @@
+# Streamlit Community Cloud (free, CPU only). Streamlit Cloud uses this file because it sits next to the app.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+transformers>=4.57
+huggingface_hub>=0.25
+sentencepiece
+protobuf
+qdrant-client>=1.12
+pdfplumber>=0.11
+pypdfium2>=4.30
+streamlit>=1.38
+pandas
+pillow
+requests
