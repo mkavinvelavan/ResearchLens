@@ -23,7 +23,7 @@ import subprocess
 from collections import Counter
 from pathlib import Path
 
-CAPTION_RE = re.compile(r"^\s*(fig(?:ure)?\.?|table|tab\.)\s*(\d+)\s*[:.|]?\s*", re.I)
+CAPTION_RE = re.compile(r"^\s*(fig(?:ure)?\.?|table|tab\.)\s*(\d+)\s*[:.|]\s*", re.I)  # "Table 3 shows" is not a caption
 MENTION_RE = re.compile(r"\b(fig(?:ure)?s?\.?|tables?|tab\.|eq(?:uation)?s?\.?)\s*~?\(?(\d+)\)?", re.I)
 EQNUM_RE = re.compile(r"\((\d{1,3})\)\s*$")
 HEADING_RE = re.compile(r"^(\d+(\.\d+)*\.?|[IVX]+\.|[A-Z]\.)?\s*[A-Z][A-Za-z0-9 ,:&\-()/]{1,80}$")
@@ -136,7 +136,8 @@ def _lines(page) -> list[dict]:
             text = re.sub(r"\(cid:\d+\)", "?", text)
             sizes = [round(w.get("size", 0), 1) for w in seg]
             fonts = [w.get("fontname", "") for w in seg]
-            out.append({"text": text, "x0": x0, "x1": x1, "top": min(w["top"] for w in seg),
+            out.append({"text": text, "last_gap": (seg[-1]["x0"] - seg[-2]["x1"]) if len(seg) > 1 else 0,
+                        "x0": x0, "x1": x1, "top": min(w["top"] for w in seg),
                         "bottom": max(w["bottom"] for w in seg), "col": col,
                         "size": Counter(sizes).most_common(1)[0][0] if sizes else 0,
                         "bold": sum(any(k in f.lower() for k in ("bold", "medi", "semibold", "black", "heavy", "-bd", "cmbx"))
@@ -186,6 +187,7 @@ def parse_pdfplumber(pdf: Path, out: Path) -> dict:
         pages = [(p, *_lines(p)) for p in doc.pages]
         sizes = Counter(round(l["size"]) for _, ls, _ in pages for l in ls for _ in range(len(l["text"])))
         body = sizes.most_common(1)[0][0] if sizes else 10
+        seen_labels: set[str] = set()
         for pno, (page, lines, two_col) in enumerate(pages, start=1):
             W, H = page.width, page.height
             mid = W / 2
@@ -200,7 +202,8 @@ def parse_pdfplumber(pdf: Path, out: Path) -> dict:
             used = set()
             eq_units = []
             for i, l in enumerate(order):
-                if EQNUM_RE.search(l["text"]) and (len(l["text"]) < 70 or _is_math_line(l["text"][:-5])):
+                if EQNUM_RE.search(l["text"]) and l["last_gap"] > 10 and _numeric_ratio(l["text"]) < 0.4 and \
+                        (len(l["text"]) < 70 or _is_math_line(l["text"][:-5])):
                     grp = [i]
                     for step in (-1, 1):
                         j = i + step
@@ -259,8 +262,22 @@ def parse_pdfplumber(pdf: Path, out: Path) -> dict:
                     u["kind"] = "cells"
 
             # 3) figure / table region = free space between its caption and the nearest text block in the column
-            text_units = [u for u in units if u["kind"] in ("paragraph", "heading", "equation", "caption") or
-                          (u["kind"] == "cells" and u["col"] == 0)]
+            for u in units:   # a label seen before (e.g. on an earlier page) -> body text, not a second caption
+                if u["kind"] == "caption":
+                    m = CAPTION_RE.match(u["text"])
+                    lab = norm_label(m.group(1), m.group(2))
+                    if lab in seen_labels:
+                        u["kind"] = "paragraph"
+                    seen_labels.add(lab)
+            def body_like(u):   # real body text bounds a figure; short labels inside a figure do not
+                cw = col_x[u["col"]][1] - col_x[u["col"]][0]
+                if u["kind"] != "paragraph":
+                    return True
+                if u["col"] == 0 and u["bottom"] < first_col_top + 2:   # title / author block above the columns
+                    return True
+                return (u["x1"] - u["x0"]) > 0.6 * cw and len(u["text"]) > 80
+            text_units = [u for u in units if (u["kind"] in ("paragraph", "heading", "equation", "caption") and body_like(u))
+                          or (u["kind"] == "cells" and u["col"] == 0 and u["bottom"] < first_col_top + 2)]
             for u in units:
                 if u["kind"] != "caption":
                     continue
