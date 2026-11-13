@@ -17,6 +17,7 @@ import numpy as np
 
 SENT_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z(\[])")
 WORD_RE = re.compile(r"\w+(?:[-.]\w+)*|[^\w\s]")
+PTB = {"(": "-LRB-", ")": "-RRB-", "[": "-LSB-", "]": "-RSB-", "{": "-LCB-", "}": "-RCB-"}
 FIG_CLASSES = ["plot", "schematic", "photo", "table", "other"]
 REL_TEXT = {"USED-FOR": "used for", "FEATURE-OF": "feature of", "HYPONYM-OF": "is a kind of", "PART-OF": "part of",
             "COMPARE": "compared with", "CONJUNCTION": "together with", "EVALUATE-FOR": "evaluates"}
@@ -79,7 +80,8 @@ def run_relations(bank, sent_ents: list[tuple[str, list[dict]]], min_conf: float
             for b in ents:
                 if a is b or (a["start"] <= b["end"] and b["start"] <= a["end"]):
                     continue
-                ws, i1, i2 = mark(a["words"], (a["start"], a["end"]), (b["start"], b["end"]))
+                ptb = [PTB.get(w, w) for w in a["words"]]   # SciERC uses -LRB- / -RRB- for brackets
+                ws, i1, i2 = mark(ptb, (a["start"], a["end"]), (b["start"], b["end"]))
                 items.append((sid, a, b, ws, i1, i2))
     triples = []
     for chunk in batched(items, batch_size):
