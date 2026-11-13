@@ -22,7 +22,7 @@ SYSTEM = (
 CITE_RE = re.compile(r"\[(E\d+)\]")
 
 
-def _image(path: str | None, max_side: int = 640):
+def _image(path: str | None, max_side: int = 512):
     from PIL import Image
 
     if not path or not Path(path).exists():
@@ -32,7 +32,7 @@ def _image(path: str | None, max_side: int = 640):
     return img
 
 
-def build_messages(evidence: list[dict], instruction: str, max_images: int = 3) -> list[dict]:
+def build_messages(evidence: list[dict], instruction: str, max_images: int = 2) -> list[dict]:
     content, n_img = [], 0
     for it in evidence:
         img = _image(it.get("image")) if it["kind"] in ("figure", "table", "equation") and n_img < max_images else None
@@ -65,9 +65,14 @@ def generate(bank, messages: list[dict], max_new_tokens: int = 900, temperature:
         text = proc.batch_decode(out[:, inputs["input_ids"].shape[1]:], skip_special_tokens=True)[0].strip()
     else:
         streamer = TextIteratorStreamer(proc.tokenizer, skip_prompt=True, skip_special_tokens=True)
+        err = []
         def run():
-            with torch.no_grad():
-                model.generate(**inputs, streamer=streamer, **kw)
+            try:
+                with torch.no_grad():
+                    model.generate(**inputs, streamer=streamer, **kw)
+            except Exception as e:   # surface errors (e.g. GPU out of memory) instead of hanging the app
+                err.append(e)
+                streamer.end()
         th = threading.Thread(target=run, daemon=True)
         th.start()
         text = ""
@@ -75,6 +80,10 @@ def generate(bank, messages: list[dict], max_new_tokens: int = 900, temperature:
             text += piece
             on_text(text)
         th.join()
+        if err:
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            raise err[0]
         text = text.strip()
         out = None
     if torch.cuda.is_available():
