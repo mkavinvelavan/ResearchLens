@@ -82,17 +82,26 @@ def paper_picker(label="Paper", key=None):
 DEMO_REPO = f"{os.environ.get('RL_HF_USER', 'Kavinvelavan')}/researchlens-results"   # private HF dataset
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
+def _demo_index() -> list[dict]:
+    import json as _json
+
+    from huggingface_hub import hf_hub_download
+
+    f = hf_hub_download(DEMO_REPO, "demo_papers/index.json", repo_type="dataset", token=os.environ.get("HF_TOKEN"),
+                        force_download=True)
+    data = _json.loads(Path(f).read_text(encoding="utf-8"))
+    if not data:
+        raise ValueError("no demo papers yet")      # errors are not cached, so a later visit looks again
+    return data
+
+
 def demo_index() -> list[dict]:
     """Demo papers prepared by notebook K7 (demo_papers/index.json in the results dataset)."""
     try:
-        import json as _json
-
-        from huggingface_hub import hf_hub_download
-
-        f = hf_hub_download(DEMO_REPO, "demo_papers/index.json", repo_type="dataset", token=os.environ.get("HF_TOKEN"))
-        return _json.loads(Path(f).read_text(encoding="utf-8"))
-    except Exception:
+        return _demo_index()
+    except Exception as e:
+        print(f"[demo] no demo papers listed ({type(e).__name__}: {e})", flush=True)
         return []
 
 
