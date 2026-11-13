@@ -96,7 +96,13 @@ def _call(key, model, body, on_text):
     if r.status_code != 200:
         raise RuntimeError(f"Gemini API error {r.status_code} ({model}): {r.text[:400]}")
     if on_text is None:
-        return r.json()["choices"][0]["message"]["content"].strip()
+        try:
+            content = r.json()["choices"][0]["message"].get("content") or ""
+        except Exception as e:
+            raise _Retry(f"{model}: unreadable reply ({type(e).__name__})")
+        if not content.strip():          # e.g. a thinking model used all tokens before writing -> next model
+            raise _Retry(f"{model}: empty answer")
+        return content.strip()
     text = ""
     for line in r.iter_lines():
         line = line.decode("utf-8", "replace") if isinstance(line, bytes) else line

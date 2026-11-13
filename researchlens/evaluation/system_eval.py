@@ -403,7 +403,7 @@ def run_spiqa(bank, qc, out: Path, args, pacer: Pacer) -> None:
                 continue
             ans = strip_citations(text)
             jmsg = [{"role": "user", "content": [{"type": "text", "text": judge_tpl.format(q=q, g=it["answer"], c=ans)}]}]
-            verdict = pacer.call(generate, bank, jmsg, max_new_tokens=5)
+            verdict = pacer.call(generate, bank, jmsg, max_new_tokens=50)
             rec["answers"][name] = {"answer": ans, "token_f1": token_f1(ans, it["answer"]),
                                     "judge_correct": (1.0 if verdict and verdict.strip().upper().startswith("YES") else 0.0)
                                     if verdict is not None else None}
