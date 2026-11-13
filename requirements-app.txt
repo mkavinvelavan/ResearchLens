@@ -1,0 +1,14 @@
+# Part 2 pipeline + Part 3 Streamlit app (GPU machine: Kaggle / Colab / HF Space)
+transformers>=4.57
+accelerate>=0.34
+huggingface_hub>=0.25
+qdrant-client>=1.12
+pdfplumber>=0.11
+pypdfium2>=4.30
+streamlit>=1.38
+pandas
+pillow
+torchvision
+# optional, better parsing / OCR (heavy):
+# mineru[core]
+# paddleocr paddlepaddle
