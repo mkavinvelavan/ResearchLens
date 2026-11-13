@@ -123,8 +123,11 @@ def page_upload():
     demos = demo_index()
     if demos:
         st.subheader("Try a demo paper (instant)")
-        st.caption("Processed beforehand by the same pipeline, so they open in seconds. Your own PDFs take a few "
-                   "minutes on the free server.")
+        st.caption("Ordinary published papers, not part of our text-model training data. We ran the same pipeline on "
+                   "them once in advance on a GPU and saved the results (entities, relations, figure types, formulas, "
+                   "search vectors, overview). Opening one just loads those saved results, so it takes seconds. Your "
+                   "own PDFs go through every model live on this small CPU server, which takes a few minutes. "
+                   "Questions are answered live for both.")
         cols = st.columns(min(len(demos), 3))
         for i, d in enumerate(demos):
             if cols[i % len(cols)].button(d["title"][:70], key=f"demo_{d['paper_id']}"):
