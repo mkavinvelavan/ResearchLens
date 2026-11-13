@@ -4,6 +4,7 @@ citing evidence ids. The Evidence Trace maps every cited id back to paper, page,
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 
@@ -46,8 +47,76 @@ def build_messages(evidence: list[dict], instruction: str, max_images: int = 2) 
             {"role": "user", "content": content}]
 
 
+API_URL = os.environ.get("QWEN_API_URL", "https://openrouter.ai/api/v1")
+API_MODEL = os.environ.get("QWEN_API_MODEL", "qwen/qwen2.5-vl-32b-instruct:free")
+
+
+def use_api() -> bool:
+    """RL_VLM_MODE=api|local. Default: api when QWEN_API_KEY is set (deployed website), otherwise local Qwen3-VL on GPU."""
+    mode = os.environ.get("RL_VLM_MODE", "auto")
+    return mode == "api" or (mode == "auto" and bool(os.environ.get("QWEN_API_KEY")))
+
+
+def _to_openai(messages: list[dict]) -> list[dict]:
+    """Our chat format (PIL images inside) -> OpenAI format (images as base64 data URLs)."""
+    import base64
+    import io
+
+    out = []
+    for m in messages:
+        parts = []
+        for c in m["content"]:
+            if c["type"] == "text":
+                parts.append({"type": "text", "text": c["text"]})
+            else:
+                buf = io.BytesIO()
+                c["image"].save(buf, format="JPEG", quality=90)
+                url = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+                parts.append({"type": "image_url", "image_url": {"url": url}})
+        out.append({"role": m["role"], "content": parts})
+    return out
+
+
+def generate_api(messages: list[dict], max_new_tokens: int = 900, temperature: float = 0.0, on_text=None) -> str:
+    """Any OpenAI-compatible endpoint: OpenRouter (free Qwen2.5-VL), Alibaba Model Studio, HF router ...
+    Set QWEN_API_KEY (secret), optionally QWEN_API_URL and QWEN_API_MODEL."""
+    import requests
+
+    key = os.environ.get("QWEN_API_KEY")
+    if not key:
+        raise RuntimeError("QWEN_API_KEY is not set (add it as a secret).")
+    body = {"model": API_MODEL, "messages": _to_openai(messages), "max_tokens": max_new_tokens,
+            "temperature": temperature, "stream": on_text is not None}
+    r = requests.post(f"{API_URL.rstrip('/')}/chat/completions", json=body, stream=on_text is not None, timeout=300,
+                      headers={"Authorization": f"Bearer {key}", "X-Title": "ResearchLens"})
+    if r.status_code != 200:
+        msg = r.text[:400]
+        if r.status_code == 429:
+            msg = "API rate limit reached (free tier: about 20 requests/minute, 50/day). Try again later. " + msg
+        raise RuntimeError(f"Qwen API error {r.status_code}: {msg}")
+    if on_text is None:
+        return r.json()["choices"][0]["message"]["content"].strip()
+    text = ""
+    for line in r.iter_lines(decode_unicode=True):
+        if not line or not line.startswith("data:"):
+            continue
+        data = line[5:].strip()
+        if data == "[DONE]":
+            break
+        try:
+            delta = json.loads(data)["choices"][0].get("delta", {}).get("content") or ""
+        except Exception:
+            continue
+        if delta:
+            text += delta
+            on_text(text)
+    return text.strip()
+
+
 def generate(bank, messages: list[dict], max_new_tokens: int = 900, temperature: float = 0.0, on_text=None) -> str:
     """on_text(partial_text) is called while tokens arrive (the app shows the answer as it is written)."""
+    if use_api():
+        return generate_api(messages, max_new_tokens, temperature, on_text)
     import threading
 
     import torch
@@ -104,7 +173,7 @@ def evidence_trace(answer: str, evidence: list[dict]) -> list[dict]:
             "eid": eid, "paper": e.get("paper_title"), "paper_id": e["paper_id"], "page": e["page"],
             "section": e.get("section"), "kind": e["kind"], "label": e.get("label"), "block_id": e["block_id"],
             "snippet": (e.get("caption") or e.get("latex") or e.get("text") or "")[:300], "image": e.get("image"),
-            "why": e.get("via") + (f", evidence-finder score {e['evidence_score']:.2f}" if e.get("evidence_score") is not None
+            "why": (e.get("via") or "retrieved") + (f", evidence-finder score {e['evidence_score']:.2f}" if e.get("evidence_score") is not None
                                    else ""),
         })
     return trace

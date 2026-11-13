@@ -2,7 +2,8 @@
 
     streamlit run app/streamlit_app.py
 
-Needs a GPU for Qwen3-VL. HF_TOKEN (to load our private models) and optionally QDRANT_URL / QDRANT_API_KEY
+Answers come from Qwen3-VL on a GPU (local mode) or from a Qwen-VL API when QWEN_API_KEY is set
+(api mode: runs on a free CPU Space; QWEN_API_URL / QWEN_API_MODEL choose the provider, default OpenRouter free Qwen2.5-VL). HF_TOKEN (to load our private models) and optionally QDRANT_URL / QDRANT_API_KEY
 come from environment variables or Streamlit secrets.
 """
 from __future__ import annotations
@@ -16,7 +17,7 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-for k in ("HF_TOKEN", "QDRANT_URL", "QDRANT_API_KEY", "RL_HF_USER"):
+for k in ("HF_TOKEN", "QDRANT_URL", "QDRANT_API_KEY", "RL_HF_USER", "QWEN_API_KEY", "QWEN_API_URL", "QWEN_API_MODEL", "RL_VLM_MODE"):
     try:
         if k in st.secrets and not os.environ.get(k):
             os.environ[k] = st.secrets[k]
