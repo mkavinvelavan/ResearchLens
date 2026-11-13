@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import time
 import re
 from pathlib import Path
 
@@ -273,13 +274,16 @@ def enrich(out_dir: str | Path, bank=None, steps=("ner", "relations", "figures",
     paras = [b for b in blocks if b["kind"] == "paragraph" and len(b["text"]) > 30]
     sents = [(b["id"], i, s) for b in paras for i, s in enumerate(sentences(b["text"]))]
     if "ner" in steps and sents:
+        t = time.time()
         ents = run_ner(bank, [s for _, _, s in sents])
         bank.release("ner")
+        print(f"[time] NER on {len(sents)} sentences: {time.time() - t:.0f}s", flush=True)
         for (bid, i, s), es in zip(sents, ents):
             b = next(x for x in paras if x["id"] == bid)
             b.setdefault("entities", []).extend(
                 {"text": e["text"], "type": e["type"], "sentence": i} for e in es)
         if "relations" in steps:
+            t = time.time()
             sent_ents = [(f"{bid}:{i}", es) for (bid, i, _), es in zip(sents, ents) if len(es) >= 2]
             for t in run_relations(bank, sent_ents):
                 bid, i = t["sentence_id"].split(":")
@@ -287,16 +291,21 @@ def enrich(out_dir: str | Path, bank=None, steps=("ner", "relations", "figures",
                 b.setdefault("relations", []).append({**{k: v for k, v in t.items() if k != "sentence_id"},
                                                      "sentence": int(i)})
             bank.release("relation")
+            print(f"[time] relations: {time.time() - t:.0f}s", flush=True)
     figs = [b for b in blocks if b["kind"] in ("figure", "table")]
     if "figures" in steps and figs:
+        t = time.time()
         figure_types(bank, out_dir, figs)
         bank.release("figtype", "captype")
+        print(f"[time] figure types ({len(figs)}): {time.time() - t:.0f}s", flush=True)
     if "ocr" in steps and figs:
         figure_ocr(bank, out_dir, figs)
     eqs = [b for b in blocks if b["kind"] == "equation"]
     if "formulas" in steps and eqs:
+        t = time.time()
         formulas(bank, out_dir, eqs)
         bank.release("formula")
+        print(f"[time] formulas ({len(eqs)}): {time.time() - t:.0f}s", flush=True)
 
     # paper-level entity / relation summary (used by the overview and comparison)
     from collections import Counter
@@ -310,6 +319,7 @@ def enrich(out_dir: str | Path, bank=None, steps=("ner", "relations", "figures",
             if k not in rel_seen or r["conf"] > rel_seen[k]["conf"]:
                 rel_seen[k] = {**r, "block": b["id"], "page": b["page"]}
     doc["relations"] = sorted(rel_seen.values(), key=lambda r: -r["conf"])[:300]
+    doc["enriched"] = True
     (out_dir / "doc.json").write_text(json.dumps(doc, indent=1, ensure_ascii=False), encoding="utf-8")
     print(f"enriched: {sum(len(b.get('entities', [])) for b in paras)} entity mentions, {len(doc['relations'])} relations, "
           f"{len(figs)} figures/tables, {len(eqs)} equations")

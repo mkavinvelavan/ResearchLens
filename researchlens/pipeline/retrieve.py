@@ -54,11 +54,13 @@ def by_labels(qc, paper_ids, labels):
     return [p.payload for p in pts]
 
 
-def retrieve(bank, question: str, paper_ids: list[str], qc=None, k_candidates: int = 24, k_text: int = 5,
+def retrieve(bank, question: str, paper_ids: list[str], qc=None, k_candidates: int | None = None, k_text: int = 5,
              k_image: int = 2, rerank: bool = True, kinds: list[str] | None = None) -> list[dict]:
     qc = qc or client()
+    if k_candidates is None:   # CPU hosting: re-rank fewer candidates (the evidence finder is the slow part)
+        k_candidates = 12 if getattr(bank, "low_memory", False) else 24
     qv = embed_texts(bank, [question], query=True)[0]
-    per_paper = max(k_candidates // max(len(paper_ids), 1), 8)
+    per_paper = max(k_candidates // max(len(paper_ids), 1), 8 if k_candidates >= 16 else 6)
     cands = []
     for pid in paper_ids:   # search each paper separately so a comparison gets evidence from both papers
         cands += _search(qc, qv, "text", _filter([pid], kinds), per_paper)

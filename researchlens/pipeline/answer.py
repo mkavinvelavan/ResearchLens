@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from pathlib import Path
 
 from researchlens.pipeline.retrieve import describe
@@ -48,7 +49,8 @@ def build_messages(evidence: list[dict], instruction: str, max_images: int = 2) 
 
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"   # Gemini's OpenAI-compatible endpoint
-GEMINI_MODELS = os.environ.get("GEMINI_MODELS", "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite,"
+# Flash-Lite first: fastest and, in our tests, least often busy; the bigger Flash models are the fallback.
+GEMINI_MODELS = os.environ.get("GEMINI_MODELS", "gemini-3.5-flash-lite,gemini-3.6-flash,gemini-3.8-flash,"
                                "gemini-3.1-flash-lite")
 LAST_MODEL = {"name": None}          # which Gemini model produced the last answer (shown in the app)
 
@@ -126,11 +128,12 @@ def generate(bank, messages: list[dict], max_new_tokens: int = 900, temperature:
     body = {"messages": _to_openai(messages), "max_tokens": max_new_tokens, "temperature": temperature,
             "stream": on_text is not None}
     errors = []
+    t0 = time.time()
     for model in gemini_models():
         try:
             text = _call(key, model, body, on_text)
             LAST_MODEL["name"] = model
-            print(f"[Gemini] answered by {model}", flush=True)
+            print(f"[Gemini] answered by {model} in {time.time() - t0:.0f}s", flush=True)
             return text
         except _Retry as e:
             errors.append(str(e))

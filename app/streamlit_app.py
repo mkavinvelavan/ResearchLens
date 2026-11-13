@@ -79,11 +79,51 @@ def paper_picker(label="Paper", key=None):
     return opts[st.selectbox(label, list(opts), key=key)]
 
 
+DEMO_REPO = f"{os.environ.get('RL_HF_USER', 'Kavinvelavan')}/researchlens-results"   # private HF dataset
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def demo_index() -> list[dict]:
+    """Demo papers prepared by notebook K7 (demo_papers/index.json in the results dataset)."""
+    try:
+        import json as _json
+
+        from huggingface_hub import hf_hub_download
+
+        f = hf_hub_download(DEMO_REPO, "demo_papers/index.json", repo_type="dataset", token=os.environ.get("HF_TOKEN"))
+        return _json.loads(Path(f).read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def load_demo(paper_id: str, log=print) -> dict:
+    from huggingface_hub import snapshot_download
+
+    from researchlens.pipeline.run import load_processed
+
+    snapshot_download(DEMO_REPO, repo_type="dataset", allow_patterns=[f"demo_papers/{paper_id}/*"], local_dir=WORK,
+                      token=os.environ.get("HF_TOKEN"))
+    return load_processed(WORK / "demo_papers" / paper_id, get_bank(), get_qdrant(), log=log)
+
+
 # ------------------------------------------------------------------ pages
 def page_upload():
     st.header("Upload papers")
     st.write("Upload one paper for **Single Paper Analysis** or two for **Two-Paper Comparison**. Each paper is split "
              "into text, figures, tables and formulas, processed by our fine-tuned models, and stored in Qdrant.")
+    demos = demo_index()
+    if demos:
+        st.subheader("Try a demo paper (instant)")
+        st.caption("Processed beforehand by the same pipeline, so they open in seconds. Your own PDFs take a few "
+                   "minutes on the free server.")
+        cols = st.columns(min(len(demos), 3))
+        for i, d in enumerate(demos):
+            if cols[i % len(cols)].button(d["title"][:70], key=f"demo_{d['paper_id']}"):
+                with st.status(f"Loading {d['title'][:60]}", expanded=False) as s:
+                    doc = load_demo(d["paper_id"], log=s.write)
+                    ss.docs[doc["paper_id"]] = doc
+                    s.update(label=f"✅ {doc.get('title', '')[:80]}", state="complete")
+        st.subheader("Or upload your own")
     files = st.file_uploader("PDF files", type=["pdf"], accept_multiple_files=True)
     if files and st.button("Process", type="primary"):
         from researchlens.pipeline.run import process_paper
@@ -106,15 +146,21 @@ def page_upload():
 
 
 def page_overview():
-    from researchlens.pipeline.analysis import overview
+    from researchlens.pipeline.analysis import load_overview, overview, save_overview
 
     st.header("Paper overview")
     pid = paper_picker()
     doc = ss.docs[pid]
-    if pid not in ss.overviews or st.button("Regenerate"):
+    regenerate = st.button("Regenerate")
+    if pid not in ss.overviews and not regenerate:
+        saved = load_overview(doc)          # written once and kept with the paper (demo papers ship with one)
+        if saved:
+            ss.overviews[pid] = saved
+    if pid not in ss.overviews or regenerate:
         box = st.empty()
         with st.spinner("Retrieving evidence and writing the overview..."):
             ss.overviews[pid] = overview(get_bank(), doc, qc=get_qdrant(), on_text=lambda t: box.markdown(t + " ▌"))
+            save_overview(doc, ss.overviews[pid])
         box.empty()
     res = ss.overviews[pid]
     st.markdown(res["overview"])

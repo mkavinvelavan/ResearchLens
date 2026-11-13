@@ -43,6 +43,30 @@ def load_doc(out_dir) -> dict:
     return doc
 
 
+def _local_image(path, doc):
+    """Image paths saved on another machine (demo papers) -> the same file in this paper's folder."""
+    if not path:
+        return path
+    key = f"{doc['paper_id']}/"
+    return str(Path(doc["out_dir"]) / path.rsplit(key, 1)[1]) if key in path else path
+
+
+def load_overview(doc: dict) -> dict | None:
+    """The overview saved with the paper (written once; demo papers ship with one), or None."""
+    f = Path(doc.get("out_dir", ".")) / "overview.json"
+    if not f.exists():
+        return None
+    res = json.loads(f.read_text(encoding="utf-8"))
+    for t in res.get("trace", []):
+        t["image"] = _local_image(t.get("image"), doc)
+    return res
+
+
+def save_overview(doc: dict, res: dict) -> None:
+    keep = {k: res[k] for k in ("overview", "trace", "entities") if k in res}
+    (Path(doc["out_dir"]) / "overview.json").write_text(json.dumps(keep, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
 def entity_summary(doc: dict, top: int = 8) -> dict:
     by_type = {}
     for e in doc.get("entities", []):

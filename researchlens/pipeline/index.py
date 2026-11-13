@@ -112,9 +112,24 @@ def index_paper(out_dir: str | Path, bank, qc=None) -> int:
     ensure_collection(qc)
     blocks = [b for b in doc["blocks"] if b["kind"] in ("paragraph", "figure", "table", "equation")
               and (b["kind"] != "paragraph" or len(b["text"]) > 40)]
-    tvec = embed_texts(bank, [block_text(b) for b in blocks])
     img_blocks = [b for b in blocks if b["kind"] in ("figure", "table") and b.get("image") and (out_dir / b["image"]).exists()]
-    ivec = dict(zip([b["id"] for b in img_blocks], embed_images(bank, [out_dir / b["image"] for b in img_blocks])))
+    cache = out_dir / "vectors.npz"            # saved vectors: re-indexing (restart, demo paper) needs no model
+    ids = [b["id"] for b in blocks]
+    if cache.exists():
+        z = np.load(cache, allow_pickle=False)
+        if list(z["ids"]) == ids:
+            tvec = z["text"]
+            ivec = dict(zip(list(z["img_ids"]), z["image"]))
+        else:
+            cache = None
+    if not cache or not cache.exists():
+        tvec = embed_texts(bank, [block_text(b) for b in blocks])
+        ivec = dict(zip([b["id"] for b in img_blocks], embed_images(bank, [out_dir / b["image"] for b in img_blocks])))
+        img_ids = list(ivec)
+        image = (np.stack([np.asarray(ivec[i], dtype=np.float32) for i in img_ids]) if img_ids
+                 else np.zeros((0, 768), dtype=np.float32))
+        np.savez(out_dir / "vectors.npz", ids=np.array(ids, dtype=str), text=np.asarray(tvec, dtype=np.float32),
+                 img_ids=np.array(img_ids, dtype=str), image=image)
     points = []
     for b, tv in zip(blocks, tvec):
         vec = {"text": tv.tolist()}
@@ -135,6 +150,16 @@ def index_paper(out_dir: str | Path, bank, qc=None) -> int:
         qc.upsert(COLLECTION, points[i:i + 128])
     print(f"indexed {len(points)} blocks of '{doc.get('title', '')[:60]}' ({len(ivec)} with image vectors)")
     return len(points)
+
+
+def paper_points(paper_id: str, qc=None) -> int:
+    from qdrant_client import models as qm
+
+    qc = qc or client()
+    if not qc.collection_exists(COLLECTION):
+        return 0
+    return qc.count(COLLECTION, count_filter=qm.Filter(must=[
+        qm.FieldCondition(key="paper_id", match=qm.MatchValue(value=paper_id))]), exact=True).count
 
 
 def delete_paper(paper_id: str, qc=None) -> None:
