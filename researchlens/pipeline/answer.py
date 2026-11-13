@@ -49,7 +49,8 @@ def build_messages(evidence: list[dict], instruction: str, max_images: int = 2) 
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
-GEMINI_MODELS = os.environ.get("GEMINI_MODELS", "gemini-2.5-flash,gemini-2.5-flash-lite")
+GEMINI_MODELS = os.environ.get("GEMINI_MODELS", "gemini-3.8-flash,gemini-3.6-flash,gemini-3.5-flash-lite,"
+                               "gemini-3.1-flash-lite")
 OPENROUTER_MODELS = os.environ.get("OPENROUTER_MODELS", "google/gemma-4-31b-it:free,nvidia/nemotron-3.5-super-vl:free,"
                                    "google/gemma-4-26b-a4b-it:free")
 LAST_MODEL = {"name": None}          # which provider/model produced the last answer (shown in the app)
