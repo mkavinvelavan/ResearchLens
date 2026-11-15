@@ -16,7 +16,7 @@ os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-for k in ("HF_TOKEN", "QDRANT_URL", "QDRANT_API_KEY", "RL_HF_USER", "GEMINI_API_KEY", "GEMINI_MODELS"):
+for k in ("HF_TOKEN", "QDRANT_URL", "QDRANT_API_KEY", "RL_HF_USER", "GEMINI_API_KEY", "GEMINI_API_KEY_2", "GEMINI_MODELS"):
     try:
         if k in st.secrets and not os.environ.get(k):
             os.environ[k] = st.secrets[k]

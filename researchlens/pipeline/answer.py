@@ -127,23 +127,25 @@ def generate(bank, messages: list[dict], max_new_tokens: int = 900, temperature:
     """Gemini reads the evidence (text + images) and answers. on_text(partial_text) is called while tokens arrive.
     Free models are sometimes busy, so each model in GEMINI_MODELS is tried in turn. `bank` is unused (kept so all
     callers stay the same). Needs the GEMINI_API_KEY secret (Google AI Studio)."""
-    key = os.environ.get("GEMINI_API_KEY")
-    if not key:
+    # GEMINI_API_KEY_2 (optional): a key from a second Google Cloud project = its own free daily quota
+    keys = [k for k in (os.environ.get("GEMINI_API_KEY"), os.environ.get("GEMINI_API_KEY_2")) if k]
+    if not keys:
         raise RuntimeError("GEMINI_API_KEY is not set: create a free key at https://aistudio.google.com/apikey and "
                            "add it as a secret.")
     body = {"messages": _to_openai(messages), "max_tokens": max_new_tokens, "temperature": temperature,
             "stream": on_text is not None}
     errors = []
     t0 = time.time()
-    for model in gemini_models():
-        try:
-            text = _call(key, model, body, on_text)
-            LAST_MODEL["name"] = model
-            print(f"[Gemini] answered by {model} in {time.time() - t0:.0f}s", flush=True)
-            return text
-        except _Retry as e:
-            errors.append(str(e))
-            print(f"[Gemini] {e} -> trying next", flush=True)
+    for k_i, key in enumerate(keys, 1):
+        for model in gemini_models():
+            try:
+                text = _call(key, model, body, on_text)
+                LAST_MODEL["name"] = model
+                print(f"[Gemini] answered by {model} (key {k_i}) in {time.time() - t0:.0f}s", flush=True)
+                return text
+            except _Retry as e:
+                errors.append(f"key {k_i}: {e}")
+                print(f"[Gemini] key {k_i}: {e} -> trying next", flush=True)
     raise RuntimeError("All free Gemini models are busy right now. Please try again in a minute.\n" + "\n".join(errors))
 
 

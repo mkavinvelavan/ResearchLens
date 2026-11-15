@@ -86,7 +86,7 @@ class Pacer:
     """Free Gemini tier: keep below ~12 requests per minute and retry once after a pause."""
 
     def __init__(self, min_gap: float = 5.0):
-        self.min_gap, self.last = min_gap, 0.0
+        self.min_gap, self.last, self.seconds = min_gap, 0.0, None
 
     def call(self, fn, *a, **kw):
         for attempt in range(3):
@@ -95,7 +95,9 @@ class Pacer:
                 time.sleep(wait)
             self.last = time.time()
             try:
-                return fn(*a, **kw)
+                out = fn(*a, **kw)
+                self.seconds = round(time.time() - self.last, 2)     # this call only (without the pacing wait)
+                return out
             except Exception as e:      # all Gemini models busy / rate limited
                 print(f"  Gemini failed ({str(e).splitlines()[0][:120]}); waiting {30 * (attempt + 1)}s", flush=True)
                 time.sleep(30 * (attempt + 1))
@@ -259,6 +261,7 @@ def run_qasper(bank, qc, out: Path, args, pacer: Pacer) -> None:
                 f1, typ = answer_f1(strip_citations(text), q["golds"])
                 ev_f1 = max(set_f1(cited_idx, set(a)) for a in q["annotators"])
                 rec["answers"][name] = {"answer": text, "answer_f1": f1, "type": typ, "evidence_f1": ev_f1,
+                                        "seconds": pacer.seconds,
                                         "cited": len(cited_idx), "citation_precision":
                                         (len(cited_idx & gold) / len(cited_idx)) if cited_idx else None}
             # closed book: title + abstract only, no retrieval
@@ -294,6 +297,8 @@ def summarize_qasper(out: Path) -> dict:
             d["evidence_f1"] = bootstrap_ci([x["evidence_f1"] for x in rows])
             d["citation_precision"] = bootstrap_ci([x["citation_precision"] for x in rows])
             d["answers_with_citation"] = float(np.mean([x["cited"] > 0 for x in rows])) if rows else None
+            secs = [x["seconds"] for x in rows if x.get("seconds") is not None]
+            d["median_answer_seconds"] = float(np.median(secs)) if secs else None
         res["answers"][name] = d
     return res
 
@@ -406,10 +411,11 @@ def run_spiqa(bank, qc, out: Path, args, pacer: Pacer) -> None:
             text = pacer.call(generate, bank, build_messages(full, instr, max_images=n_img), max_new_tokens=250)
             if text is None:
                 continue
+            secs = pacer.seconds
             ans = strip_citations(text)
             jmsg = [{"role": "user", "content": [{"type": "text", "text": judge_tpl.format(q=q, g=it["answer"], c=ans)}]}]
             verdict = pacer.call(generate, bank, jmsg, max_new_tokens=50)
-            rec["answers"][name] = {"answer": ans, "token_f1": token_f1(ans, it["answer"]),
+            rec["answers"][name] = {"answer": ans, "token_f1": token_f1(ans, it["answer"]), "seconds": secs,
                                     "judge_correct": (1.0 if verdict and verdict.strip().upper().startswith("YES") else 0.0)
                                     if verdict is not None else None}
         rec["answer_model"] = A.LAST_MODEL["name"]
@@ -429,7 +435,9 @@ def summarize_spiqa(out: Path) -> dict:
         "mean_evidence_items": float(np.mean([r["retrieval"]["full_system"]["n_evidence"] for r in recs])) if recs else None}
     for name in ("captions_only", "with_images"):
         rows = [r["answers"][name] for r in recs if r["answers"].get(name)]
-        res["answers"][name] = {"n": len(rows), "judge_accuracy": bootstrap_ci([x["judge_correct"] for x in rows]),
+        secs = [x["seconds"] for x in rows if x.get("seconds") is not None]
+        res["answers"][name] = {"n": len(rows), "median_answer_seconds": float(np.median(secs)) if secs else None,
+                                "judge_accuracy": bootstrap_ci([x["judge_correct"] for x in rows]),
                                 "token_f1": bootstrap_ci([x["token_f1"] for x in rows])}
     return res
 

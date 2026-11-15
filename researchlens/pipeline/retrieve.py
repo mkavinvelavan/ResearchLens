@@ -55,7 +55,10 @@ def by_labels(qc, paper_ids, labels):
 
 
 def retrieve(bank, question: str, paper_ids: list[str], qc=None, k_candidates: int | None = None, k_text: int = 5,
-             k_image: int = 2, rerank: bool = True, kinds: list[str] | None = None) -> list[dict]:
+             k_image: int = 2, rerank: bool = True, kinds: list[str] | None = None, use_named: bool = True,
+             use_linked: bool = True, rerank_all: bool = False) -> list[dict]:
+    """The defaults are the app. use_named / use_linked / k_image=0 / rerank=False switch single steps off (ablation);
+    rerank_all=True also re-ranks figure/table captions with the evidence finder (the earlier design)."""
     qc = qc or client()
     if k_candidates is None:   # CPU hosting: re-rank fewer candidates (the evidence finder is the slow part)
         k_candidates = 12 if getattr(bank, "low_memory", False) else 24
@@ -66,7 +69,7 @@ def retrieve(bank, question: str, paper_ids: list[str], qc=None, k_candidates: i
         cands += _search(qc, qv, "text", _filter([pid], kinds), per_paper)
     items = [{**p, "retrieval_score": round(s, 4), "via": "text search"} for s, p in cands]
     items.sort(key=lambda x: -x["retrieval_score"])
-    paras = [i for i, x in enumerate(items) if x["kind"] == "paragraph"]
+    paras = [i for i, x in enumerate(items) if rerank_all or x["kind"] == "paragraph"]
     if rerank and paras:
         # The evidence finder was trained on QASPER paragraphs: it re-orders only the paragraphs (NLP side).
         # Figures and tables keep the place the search gave them (caption search + SigLIP image search, vision
@@ -94,7 +97,7 @@ def retrieve(bank, question: str, paper_ids: list[str], qc=None, k_candidates: i
             keep.append({**p, "via": via, **({"retrieval_score": round(score, 4)} if score is not None else {})})
 
     # explicit references in the question
-    labels = {norm_label(k, n) for k, n in MENTION_RE.findall(question)}
+    labels = {norm_label(k, n) for k, n in MENTION_RE.findall(question)} if use_named else set()
     for p in by_labels(qc, paper_ids, labels):
         add(p, "named in question")
     # image search with SigLIP
@@ -104,7 +107,7 @@ def retrieve(bank, question: str, paper_ids: list[str], qc=None, k_candidates: i
             for s, p in _search(qc, sv, "image", _filter([pid], ["figure", "table"]), k_image):
                 add(p, "image search (SigLIP)", s)
     # figures / tables the top paragraphs refer to
-    linked = {lab for x in keep[:4] for lab in (x.get("mentions") or [])}
+    linked = {lab for x in keep[:4] for lab in (x.get("mentions") or [])} if use_linked else set()
     for p in by_labels(qc, paper_ids, linked):
         add(p, "mentioned by retrieved text")
 
