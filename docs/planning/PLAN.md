@@ -1,3 +1,5 @@
+> **Note:** this is the original project plan, kept for reference. Some items (V1 layout detection, V3 table structure, M1 LayoutLMv3, M4 multimodal re-ranker) were not built. The final system is described in the main [README](../../README.md).
+
 # ResearchLens model plan: equal NLP and Vision
 
 Rule: **NLP and Vision get the same number of fine-tuned models, the same evaluation template, the same number of

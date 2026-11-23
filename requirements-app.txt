@@ -9,6 +9,4 @@ streamlit>=1.38
 pandas
 pillow
 torchvision
-# optional, better parsing / OCR (heavy):
-# paddleocr paddlepaddle
 requests
