@@ -12,7 +12,7 @@
 MSc Applied AI · University of Wollongong in Dubai<br>
 MAAI901 (DB426) Deep Learning for Visual Data · MAAI902 (DB426) Natural Language Processing & LLMs
 
-[Live demo](https://researchlenzz.streamlit.app) · [Report](docs/report/) · [Slides](docs/presentation/) · [Results](results/README.md) · [Notebooks](notebooks/README.md)
+[Live demo](https://researchlenzz.streamlit.app) · [Results](results/README.md) · [Notebooks](notebooks/README.md)
 
 </div>
 
@@ -129,7 +129,7 @@ researchlens/
 │   ├── 2_evaluation/           results, graphs, full-system evaluation
 │   └── 3_application/          end-to-end test, run the app, prepare demo papers
 ├── results/                    final test results and graphs
-├── docs/                       report, slides, hyper-parameters, diagrams, original plan
+├── docs/                       hyper-parameters, diagrams, original plan
 ├── data/                       local dataset cache (not committed; datasets download automatically)
 ├── requirements.txt            full local environment (training + app)
 ├── requirements-colab.txt      extra packages for Colab training
@@ -220,5 +220,4 @@ All datasets are public and download automatically.
 ## Acknowledgements
 
 Built with PyTorch, Hugging Face Transformers, Qdrant, pdfplumber, pypdfium2 and Streamlit. Pre-trained models:
-SciBERT (Allen AI), ViT and SigLIP (Google), TrOCR (Microsoft), bge-small (BAAI) and Gemini (Google). Full
-references are in the [report](docs/report/).
+SciBERT (Allen AI), ViT and SigLIP (Google), TrOCR (Microsoft), bge-small (BAAI) and Gemini (Google).
