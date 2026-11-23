@@ -1,5 +1,7 @@
 # ResearchLens application (Part 3)
 
+Live: **https://researchlenzz.streamlit.app**
+
 `streamlit_app.py` — upload one or two papers, get an automatic overview, ask questions, explain figures/tables/formulas,
 compare two papers, Research Gap Map and research ideas, every answer with an Evidence Trace.
 
@@ -11,9 +13,9 @@ compare two papers, Research Gap Map and research ideas, every answer with an Ev
 
 ## Deploy on Streamlit Community Cloud (free)
 
-1. Go to https://share.streamlit.io and sign in with GitHub (allow access to the `ResearchLens` repo).
+1. Go to https://share.streamlit.io and sign in with GitHub (allow access to the `researchlens` repo).
 2. **Create app → Deploy a public app from GitHub**
-   * Repository: `mkavinvelavan/ResearchLens`, branch `main`
+   * Repository: `mkavinvelavan/researchlens`, branch `main`
    * Main file path: `app/streamlit_app.py`
    * App URL: choose a name, e.g. `researchlens`
 3. **Advanced settings** → Python version **3.12**, and in **Secrets** paste (with your own values):

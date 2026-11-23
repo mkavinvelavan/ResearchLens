@@ -1,3 +1,5 @@
+> **Note:** this is the original training plan, kept for reference. Some items (V1 layout detection, V3 table structure, M1 LayoutLMv3, M4 multimodal re-ranker) were not built. The final system is described in the main [README](../../README.md).
+
 # Training plan (lean): 5 fine-tuned models, one seed each
 
 Time budget is limited, so ResearchLens fine-tunes **5 models** (balanced: 2 NLP, 2 Vision, 1 Multimodal) and uses

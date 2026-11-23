@@ -11,3 +11,13 @@ wandb/
 *.safetensors
 *.bin
 *.pt
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.egg-info/
+
+# secrets
+.streamlit/secrets.toml

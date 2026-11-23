@@ -7,6 +7,23 @@ Shared by every model: optimizer **AdamW**, mixed precision **fp16** on GPU, eva
 the **best validation checkpoint** is kept and used for the single test evaluation, **early stopping** when the
 validation metric stops improving, **3 seeds** (42, 43, 44).
 
+## Final runs (all seven models)
+
+The models used in the app were each trained once with seed 42 (the N1 SciBERT vs BERT comparison used 3 seeds).
+Optimizer AdamW, weight decay 0.05, fp16, best validation checkpoint kept, test set scored once.
+
+| Model | Config | Learning rate | Max epochs | Epochs run | Best epoch | Batch | Schedule | Early stopping on · patience |
+|---|---|---|---|---|---|---|---|---|
+| NER (SciBERT, multi-domain) | `n1_ner_multidomain.yaml` | 2e-5 | 8 | 7 | 5 | 16 | linear | entity F1 · 2 |
+| Relation extractor (SciBERT) | `n2_relation.yaml` | 3e-5 | 6 | 6 | 5 | 32 | linear | relation F1 · 2 |
+| Evidence finder (SciBERT) | `n3_evidence.yaml` | 2e-5 | 3 | 2 | 1 | 32 | linear | evidence F1 · 1 |
+| Caption classifier (SciBERT) | `v2_caption.yaml` | 3e-5 | 4 | 3 | 1 | 32 | linear | macro-F1 · 2 |
+| ViT figure classifier (multi-domain) | `v2_figcls_multidomain.yaml` | 5e-5 | 6 | 6 | 6 | 32 | cosine, 10% warm-up | macro-F1 · 3 |
+| TrOCR formula reader | `v3_formula.yaml` | 5e-5 | 8 | 8 | 6 | 16 | cosine, 5% warm-up | exact match · 2 |
+| Gated fusion (experiment) | `v2_fusion.yaml` | 3e-5 | 5 | 3 | 1 | 24 | cosine, 10% warm-up | macro-F1 · 2 |
+
+The sections below record how the settings were chosen during development.
+
 ## N1 · SciBERT NER (SciERC) — `configs/n1_ner.yaml` (regularised)
 
 The first run (lr 3e-5, 10 epochs) showed validation loss rising from epoch 3 while training loss went to ~0.02,
