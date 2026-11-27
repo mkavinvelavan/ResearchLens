@@ -12,7 +12,7 @@
 MSc Applied AI · University of Wollongong in Dubai<br>
 MAAI901 (DB426) Deep Learning for Visual Data · MAAI902 (DB426) Natural Language Processing & LLMs
 
-[Live demo](https://researchlenzz.streamlit.app) · [Presentation](presentation/ResearchLens_Final_Presentation.pptx) · [Results](results/README.md) · [Notebooks](notebooks/README.md)
+[Live demo](https://researchlenzz.streamlit.app) · [Presentation](presentation/ResearchLens_Final_Presentation.pptx) · [Demo video](video/ResearchLens_Demo_Walkthrough.mp4) · [Results](results/README.md) · [Notebooks](notebooks/README.md)
 
 </div>
 
@@ -23,6 +23,7 @@ MAAI901 (DB426) Deep Learning for Visual Data · MAAI902 (DB426) Natural Languag
 | What | Where |
 |---|---|
 | **Final presentation** (PowerPoint, 18 slides) | [`presentation/ResearchLens_Final_Presentation.pptx`](presentation/ResearchLens_Final_Presentation.pptx) |
+| **Demo video walkthrough** (2 min 18 s) | [`video/ResearchLens_Demo_Walkthrough.mp4`](video/ResearchLens_Demo_Walkthrough.mp4) (open it and click **View raw** or the download button to play) |
 | **Live demo** (working web app) | https://researchlenzz.streamlit.app (first visit may take about a minute to wake up) |
 | **Web app source code** | [`app/streamlit_app.py`](app/streamlit_app.py) · deployment notes in [`app/README.md`](app/README.md) |
 | **Model training code** (NLP and vision) | [`researchlens/nlp/`](researchlens/nlp/) · [`researchlens/vision/`](researchlens/vision/) · [`researchlens/fusion/`](researchlens/fusion/) |
@@ -133,6 +134,7 @@ Held-out test sets; full tables and graphs in [`results/README.md`](results/READ
 ```
 researchlens/
 ├── presentation/               final presentation (PowerPoint)
+├── video/                      demo video walkthrough (MP4)
 ├── app/                        Streamlit application (Part 3), deployed on Streamlit Community Cloud
 │   ├── streamlit_app.py        upload, overview, ask, explain, compare, gap map & ideas, entities
 │   └── requirements.txt        CPU-only packages used by Streamlit Cloud
