@@ -12,9 +12,28 @@
 MSc Applied AI · University of Wollongong in Dubai<br>
 MAAI901 (DB426) Deep Learning for Visual Data · MAAI902 (DB426) Natural Language Processing & LLMs
 
-[Live demo](https://researchlenzz.streamlit.app) · [Results](results/README.md) · [Notebooks](notebooks/README.md)
+[Live demo](https://researchlenzz.streamlit.app) · [Presentation](presentation/ResearchLens_Final_Presentation.pptx) · [Results](results/README.md) · [Notebooks](notebooks/README.md)
 
 </div>
+
+---
+
+## 📂 Where to find everything
+
+| What | Where |
+|---|---|
+| **Final presentation** (PowerPoint, 18 slides) | [`presentation/ResearchLens_Final_Presentation.pptx`](presentation/ResearchLens_Final_Presentation.pptx) |
+| **Live demo** (working web app) | https://researchlenzz.streamlit.app (first visit may take about a minute to wake up) |
+| **Web app source code** | [`app/streamlit_app.py`](app/streamlit_app.py) · deployment notes in [`app/README.md`](app/README.md) |
+| **Model training code** (NLP and vision) | [`researchlens/nlp/`](researchlens/nlp/) · [`researchlens/vision/`](researchlens/vision/) · [`researchlens/fusion/`](researchlens/fusion/) |
+| **Paper processing, knowledge base and question answering** | [`researchlens/pipeline/`](researchlens/pipeline/) |
+| **Evaluation code** (metrics, ablation, full-system test) | [`researchlens/evaluation/`](researchlens/evaluation/) |
+| **Notebooks** (training, evaluation, app) | [`notebooks/`](notebooks/), with a guide in [`notebooks/README.md`](notebooks/README.md) |
+| **Hyper-parameters** | [`configs/`](configs/) (one file per model) · [`docs/HYPERPARAMETERS.md`](docs/HYPERPARAMETERS.md) |
+| **Results, tables and graphs** | [`results/README.md`](results/README.md) · [`results/figures/`](results/figures/) |
+| **Datasets** (with links) | [Datasets](#datasets) section below |
+| **Diagrams** (architecture and workflow) | [`docs/images/`](docs/images/) |
+| **How to run it** | [Getting started](#getting-started) section below |
 
 ---
 
@@ -113,6 +132,7 @@ Held-out test sets; full tables and graphs in [`results/README.md`](results/READ
 
 ```
 researchlens/
+├── presentation/               final presentation (PowerPoint)
 ├── app/                        Streamlit application (Part 3), deployed on Streamlit Community Cloud
 │   ├── streamlit_app.py        upload, overview, ask, explain, compare, gap map & ideas, entities
 │   └── requirements.txt        CPU-only packages used by Streamlit Cloud
@@ -190,12 +210,12 @@ All datasets are public and download automatically.
 
 | Dataset | Used for | Source |
 |---|---|---|
-| SciERC (Luan et al., 2018) | NER, relation extraction | `nsusemiehl/SciERC` |
-| ScienceIE (Augenstein et al., 2017) | multi-domain NER | `DFKI-SLT/science_ie` |
-| QASPER (Dasigi et al., 2021) | evidence finder, system evaluation | allenai QASPER v0.3 |
-| SPIQA (Pramanick et al., 2024) | figure and caption classifiers, fusion, figure questions | `google/spiqa` |
-| BIOMEDICA (Lozano et al., 2025) | multi-domain ViT (commercial-use subset) | `BIOMEDICA/biomedica_webdataset_24M` |
-| im2latex-100k (Deng et al., 2017) | TrOCR formula reader | `yuntian-deng/im2latex-100k` |
+| SciERC (Luan et al., 2018) | NER, relation extraction | [nlp.cs.washington.edu/sciIE](http://nlp.cs.washington.edu/sciIE/) · mirror [`nsusemiehl/SciERC`](https://huggingface.co/datasets/nsusemiehl/SciERC) |
+| ScienceIE (Augenstein et al., 2017) | multi-domain NER | [`DFKI-SLT/science_ie`](https://huggingface.co/datasets/DFKI-SLT/science_ie) |
+| QASPER (Dasigi et al., 2021) | evidence finder, system evaluation | [`allenai/qasper`](https://huggingface.co/datasets/allenai/qasper) (QASPER v0.3) |
+| SPIQA (Pramanick et al., 2024) | figure and caption classifiers, fusion, figure questions | [`google/spiqa`](https://huggingface.co/datasets/google/spiqa) |
+| BIOMEDICA (Lozano et al., 2025) | multi-domain ViT (commercial-use subset) | [`BIOMEDICA/biomedica_webdataset_24M`](https://huggingface.co/datasets/BIOMEDICA/biomedica_webdataset_24M) |
+| im2latex-100k (Deng et al., 2017) | TrOCR formula reader | [`yuntian-deng/im2latex-100k`](https://huggingface.co/datasets/yuntian-deng/im2latex-100k) |
 
 ## Responsible use
 
